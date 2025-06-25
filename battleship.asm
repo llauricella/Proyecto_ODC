@@ -11,7 +11,7 @@
 .data
 	# INICIO DE LA SECCIÓN DATA
 	# ADDRESS: 0x10010000
-	screen_board: .space 512 # El tablero se aloja al inicio de la sección data, reservar espacio de tablero
+	screen_board: .space 2048 # El tablero se aloja al inicio de la sección data, reservar espacio de tablero
 	
 	# Paleta de colores
 	screen_colors:
@@ -62,7 +62,7 @@ empty_screen_board:
 	loop_esb:
 		sw $t0, screen_board($t1)
 		
-		beq $t1, 512, return_esb
+		beq $t1, 2048, return_esb
 		
 		add $t1, $t1, 4
 		j loop_esb
