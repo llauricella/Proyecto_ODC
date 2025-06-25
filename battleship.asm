@@ -11,7 +11,7 @@
 .data
 	# INICIO DE LA SECCIÓN DATA
 	# ADDRESS: 0x10010000
-	screen_board: .space 2048 # El tablero se aloja al inicio de la sección data, reservar espacio de tablero
+	screen_board: .space BOARD_SIZE # El tablero se aloja al inicio de la sección data, reservar espacio de tablero
 	
 	# Paleta de colores
 	screen_colors:
@@ -25,7 +25,7 @@
 	
 .text
 	.globl main
-	
+
 main:
 	jal empty_screen_board
 	
@@ -56,20 +56,45 @@ main:
 
 # Función para vaciar el tablero en pantalla
 empty_screen_board:
-	li $t1, 0
-	get_from_array($t0, screen_colors, 0)
+	la $a0, screen_colors
+	li $a1, 0
+	
+	store_ra
+	jal get_from_array
+	restore_ra
+	
+	li $t0, 0
 	
 	loop_esb:
-		sw $t0, screen_board($t1)
+		sw $v0, screen_board($t0)
 		
-		beq $t1, 2048, return_esb
+		beq $t0, BOARD_SIZE, return_esb
 		
-		add $t1, $t1, 4
+		add $t0, $t0, 4
 		j loop_esb
 		
 	return_esb:
 		jr $ra
-		
+
+# Almacena $a0($a1 * 4) en $v0
+get_from_array:
+	# Pushea $s0, $s1 al stack para preservar sus valores
+	sub $sp, $sp, 8
+	sw $s0, 0($sp)
+	sw $s1, 4($sp)
+
+	mul $s0, $a1, 4
+
+	add $s1, $a0, $s0
+	lw $v0, ($s1)
+	
+	# Restaura los registros $s0, $s1 del stack
+	lw $s1, 4($sp)
+	lw $s0, 0($sp)
+	add $sp, $sp, 8
+	
+	jr $ra
+
 exit:
 	li $v0, 10
 	syscall
