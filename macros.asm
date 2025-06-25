@@ -28,3 +28,12 @@
 	lw $ra, 0($sp)
 	add $sp, $sp, 4
 .end_macro
+
+.macro load_color(%reg, %idx)
+	la $a0, screen_colors
+	li $a1, %idx
+	store_ra
+	jal get_from_array
+	restore_ra
+	move %reg, $v0
+.end_macro

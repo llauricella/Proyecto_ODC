@@ -57,10 +57,10 @@ main:
 		li $a0, 0 # x
 		li $a1, 15 # y
 		jal coord_to_board_address
+		move $t1, $v0
 		
-		la $t9, screen_colors
-		lw $t0, 4($t9)
-		sw $t0, ($v0)
+		load_color($t0, 1)
+		sw $t0, ($t1)
 		
 	menu_option_2:
 	menu_option_3:
