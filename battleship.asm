@@ -23,6 +23,10 @@
 	menu_start_msg: .asciiz "----- BATTLESHIP -----\n\nIntroduce una de las siguientes opciones para continuar:\n\n1 - Jugar contra el CPU\n2 - Jugar contra otro jugador\n3 - Salir\n-> "
 	menu_arrow: .asciiz "-> "
 	
+	# Debug messages
+	dbg_coord_y: .asciiz "y coord: "
+	dbg_coord_x: .asciiz "x coord: "
+	
 .text
 	.globl main
 
@@ -50,6 +54,14 @@ main:
 		beq $v0, 3, menu_option_3
 		
 	menu_option_1:
+		li $a0, 0 # x
+		li $a1, 15 # y
+		jal coord_to_board_address
+		
+		la $t9, screen_colors
+		lw $t0, 4($t9)
+		sw $t0, ($v0)
+		
 	menu_option_2:
 	menu_option_3:
 		b exit
@@ -95,6 +107,26 @@ get_from_array:
 	
 	jr $ra
 
+
+# Convierte una coordenada en el rango [0, 16) a la dirección de memoria correspondiente en el tablero
+# gracias! https://stackoverflow.com/a/47697769
+coord_to_board_address:
+	sub $sp, $sp, 4
+	sw $s0, 0($sp)
+	
+	xori $s0, $a1, 15 # La posición en y empieza desde el fondo del tablero
+	sll $s0, $s0, 5 # $s0 = (y * 32)
+	add $s0, $s0, $a0 # $s0 = (y * 32) + x
+	sll $s0, $s0, 2 # $s0 = ((y * 32) + x) * 4
+	
+	la $v0, screen_board
+	add $v0, $v0, $s0
+	
+	lw $s0, 0($sp)
+	add $sp, $sp, 4
+	
+	jr $ra
+	
 exit:
 	li $v0, 10
 	syscall
