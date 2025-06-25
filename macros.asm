@@ -37,3 +37,9 @@
 	restore_ra
 	move %reg, $v0
 .end_macro
+
+.macro sleep(%time)
+	li $a0, %time
+	li $v0, 32 # sleep en MARS
+	syscall
+.end_macro

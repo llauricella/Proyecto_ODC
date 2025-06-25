@@ -54,13 +54,20 @@ main:
 		beq $v0, 3, menu_option_3
 		
 	menu_option_1:
-		li $a0, 0 # x
-		li $a1, 15 # y
-		jal coord_to_board_address
-		move $t1, $v0
-		
 		load_color($t0, 1)
-		sw $t0, ($t1)
+	
+		li $t1, 0
+	loop_test_fill_column:
+		sleep(250)
+		beq $t1, 16, exit
+		
+		li $a0, 0
+		add $a1, $zero, $t1
+		jal coord_to_board_address
+		sw $t0, ($v0)
+		
+		addi $t1, $t1, 1
+		j loop_test_fill_column
 		
 	menu_option_2:
 	menu_option_3:
@@ -115,9 +122,9 @@ coord_to_board_address:
 	sw $s0, 0($sp)
 	
 	xori $s0, $a1, 15 # La posición en y empieza desde el fondo del tablero
-	sll $s0, $s0, 5 # $s0 = (y * 32)
-	add $s0, $s0, $a0 # $s0 = (y * 32) + x
-	sll $s0, $s0, 2 # $s0 = ((y * 32) + x) * 4
+	sll $s0, $s0, 4 # $s0 = (y * 16)
+	add $s0, $s0, $a0 # $s0 = (y * 16) + x
+	sll $s0, $s0, 2 # $s0 = ((y * 16) + x) * 4
 	
 	la $v0, screen_board
 	add $v0, $v0, $s0
