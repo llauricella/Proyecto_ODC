@@ -153,8 +153,6 @@ start_player_boat_positioning:
 	
 	jal initialize_player_boat_data
 	
-	load_color($s0, 4)
-	
 	# Empezar con el portaaviones
 	li $a0, BOAT_TYPE_CARRIER
 	jal position_boat
