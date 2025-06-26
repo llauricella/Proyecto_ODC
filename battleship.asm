@@ -6,6 +6,8 @@
 ###		- Luigi Lauricella
 #
 
+# is it ok for functions not to have proper stack frames?
+
 .include "macros.asm"
 
 .data
@@ -15,17 +17,22 @@
 	
 	# Paleta de colores
 	screen_colors:
-		.word 0x0000FF # Azul
-		.word 0x00FF00 # Verde
-		.word 0xFF0000 # Rojo
-		 
+		.word 0x0000FF # Azul (Agua)
+		.word 0x808080 # Gris (Barco)
+		.word 0xFF0000 # Rojo (Impacto)
+		.word 0xFFFFFF # Blanco (Fallo)
+		.word 0xFFFF00 # Amarillo (Selección)
+		
+	# Posición de los barcos del jugador principal
+	player_boat_data: .word 0:20
+		
+	player_board_matrix: .word 0:128
+	player_board_rows: .word 8
+	player_board_cols: .word 16
+		
 	# Mensajes del menú
 	menu_start_msg: .asciiz "----- BATTLESHIP -----\n\nIntroduce una de las siguientes opciones para continuar:\n\n1 - Jugar contra el CPU\n2 - Jugar contra otro jugador\n3 - Salir\n-> "
 	menu_arrow: .asciiz "-> "
-	
-	# Debug messages
-	dbg_coord_y: .asciiz "y coord: "
-	dbg_coord_x: .asciiz "x coord: "
 	
 .text
 	.globl main
@@ -54,21 +61,7 @@ main:
 		beq $v0, 3, menu_option_3
 		
 	menu_option_1:
-		load_color($t0, 1)
-	
-		li $t1, 0
-	loop_test_fill_column:
-		sleep(250)
-		beq $t1, 16, exit
-		
-		li $a0, 0
-		add $a1, $zero, $t1
-		jal coord_to_board_address
-		sw $t0, ($v0)
-		
-		addi $t1, $t1, 1
-		j loop_test_fill_column
-		
+		jal start_player_boat_positioning
 	menu_option_2:
 	menu_option_3:
 		b exit
@@ -132,6 +125,282 @@ coord_to_board_address:
 	lw $s0, 0($sp)
 	add $sp, $sp, 4
 	
+	jr $ra
+
+# Verifica si la posición es válida
+# $a0 = x
+# $a1 = y
+# Retorna 0 si la coordenada es inválida, 1 de lo contrario
+check_coord_bounds_lower_screen:
+	blt $a0, 0, invalid_ccbls
+	bgt $a0, 15, invalid_ccbls
+	blt $a1, 0, invalid_ccbls
+	bgt $a1, 7, invalid_ccbls
+	
+	li $v0, 1
+	
+	return_ccbls:
+		jr $ra
+		
+	invalid_ccbls:
+		li $v0, 0
+		j return_ccbls
+		
+start_player_boat_positioning:
+	# guardar $ra
+	sub $sp, $sp, 4
+	sw $ra, 0($sp)
+	
+	jal initialize_player_boat_data
+	
+	load_color($s0, 4)
+	
+	# Empezar con el portaaviones
+	jal position_carrier
+		
+	lw $ra, 0($sp)
+	add $sp, $sp, 4
+	
+	jr $ra
+
+position_carrier:
+	sub $sp, $sp, 12
+	sw $ra, 8($sp)
+	sw $s0, 4($sp)
+	sw $s1, 0($sp)
+	
+	load_color($t0, 4) # Amarillo
+	load_color($t1, 0) # Azul
+	load_color($t2, 1) # Gris
+	
+	# $s0 contiene el eje del barco
+	li $s0, 0
+	li $a0, 0
+	li $a1, 0
+	jal coord_to_board_address
+	move $s0, $v0
+	
+	loop_draw_pc:
+		jal coord_to_board_address
+
+		sw $t0, ($v0)
+		add $a0, $a0, 1
+		bne $a0, 5, loop_draw_pc
+	
+	# Coordenada inicial
+	li $a0, 0
+	li $a1, 0
+	
+	loop_input_pc:
+		li $v0, 12 # Read character
+		syscall
+		
+		beq $v0, 'd', move_carrier_right_pc
+		beq $v0, 'a', move_carrier_left_pc
+		beq $v0, 'w', move_carrier_up_pc
+		beq $v0, 's', move_carrier_down_pc
+		beq $v0, 'e', place_carrier_pc
+		
+		j loop_input_pc
+		
+		move_carrier_right_out_of_bounds:
+			sub $a0, $a0, 5
+			j loop_input_pc
+			
+		move_carrier_right_pc:
+			add $a0, $a0, 5
+			jal check_coord_bounds_lower_screen
+			beqz $v0, move_carrier_right_out_of_bounds
+			
+			sw $t1, ($s0)
+			
+			jal coord_to_board_address
+			sw $t0, ($v0)
+			
+			# Recalcular eje			
+			sub $a0, $a0, 4
+			jal coord_to_board_address
+			move $s0, $v0
+			
+			j loop_input_pc
+		
+		move_carrier_left_out_of_bounds:
+			add $a0, $a0, 1
+			j loop_input_pc
+			
+		move_carrier_left_pc:
+			sub $a0, $a0, 1
+			jal check_coord_bounds_lower_screen
+			beqz $v0, move_carrier_left_out_of_bounds
+			
+			add $a0, $a0, 5
+			jal coord_to_board_address
+			sw $t1, ($v0)
+			
+			sub $a0, $a0, 5
+			jal coord_to_board_address
+			move $s0, $v0
+			sw $t0, ($s0)
+			
+			j loop_input_pc
+			
+		redraw_carrier_pc:
+			store_ra
+			jal coord_to_board_address #redraw
+			restore_ra
+			
+			move $s0, $v0
+			sw $t0, ($v0)
+			
+			move $t4, $a0
+			add $t3, $a0, 5
+			add $a0, $a0, 1
+			
+			redraw_carrier_pc_loop:
+				store_ra
+				jal coord_to_board_address
+				restore_ra
+				
+				sw $t0, ($v0)
+				add $a0, $a0, 1
+				beq $a0, $t3, redraw_carrier_pc_loop_done
+				
+				j redraw_carrier_pc_loop
+			
+		redraw_carrier_pc_loop_done:
+			move $a0, $t4
+			jr $ra
+			
+		move_carrier_up_out_of_bounds:
+			sub $a1, $a1, 1
+			j loop_input_pc
+			
+		move_carrier_up_pc:
+			add $a1, $a1, 1
+			jal check_coord_bounds_lower_screen
+			beqz $v0, move_carrier_up_out_of_bounds
+			
+			# Undraw carrier
+			sw $t1, 0($s0)
+			sw $t1, 4($s0)
+			sw $t1, 8($s0)
+			sw $t1, 12($s0)
+			sw $t1, 16($s0)
+			
+			jal redraw_carrier_pc
+			
+			j loop_input_pc
+		
+		move_carrier_down_out_of_bounds:
+			add $a1, $a1, 1
+			j loop_input_pc
+			
+		move_carrier_down_pc:
+			sub $a1, $a1, 1
+			jal check_coord_bounds_lower_screen
+			beqz $v0, move_carrier_down_out_of_bounds
+			
+			# Undraw carrier
+			sw $t1, 0($s0)
+			sw $t1, 4($s0)
+			sw $t1, 8($s0)
+			sw $t1, 12($s0)
+			sw $t1, 16($s0)
+			
+			jal redraw_carrier_pc
+			
+			j loop_input_pc
+			
+		place_carrier_pc:
+			# TODO: Revisar overlapping con otros barcos
+			
+			sw $t2, 0($s0)
+			sw $t2, 4($s0)
+			sw $t2, 8($s0)
+			sw $t2, 12($s0)
+			sw $t2, 16($s0)
+			
+			li $t8, 0
+			move $t9, $a0
+			add $t8, $t9, 5
+			
+			la $a2, player_boat_data
+			place_carrier_loop_:
+				jal set_element_in_board_matrix
+				add $a0, $a0, 1
+				beq $a0, $t8, loop_input_pc_done
+			
+	loop_input_pc_done:
+		lw $s1, 0($sp)
+		lw $s0, 4($sp)
+		lw $ra, 8($sp)
+		add $sp, $sp, 12
+	
+		jr $ra
+	
+initialize_player_boat_data:
+	la $t0, player_boat_data
+	li $t2, BOAT_FACING_RIGHT
+	
+	# Carrier
+	li $t1, BOAT_TYPE_CARRIER
+	sw $t1, 0($t0)
+	sw $zero, 4($t0)
+	sw $zero, 8($t0)
+	sw $t2, 12($t0)
+	
+	# Battleship
+	li $t1, BOAT_TYPE_BATTLESHIP
+	sw $t1, 16($t0)
+	sw $zero, 20($t0)
+	sw $zero, 24($t0)
+	sw $t2, 28($t0)
+	
+	# Destroyer
+	li $t1, BOAT_TYPE_DESTROYER
+	sw $t1, 32($t0)
+	sw $zero, 36($t0)
+	sw $zero, 40($t0)
+	sw $t2, 44($t0)
+	
+	# Submarine
+	li $t1, BOAT_TYPE_SUBMARINE
+	sw $t1, 48($t0)
+	sw $zero, 52($t0)
+	sw $zero, 56($t0)
+	sw $t2, 60($t0)
+	
+	# Patrol Boat
+	li $t1, BOAT_TYPE_PATROL_BOAT
+	sw $t1, 64($t0)
+	sw $zero, 68($t0)
+	sw $zero, 72($t0)
+	sw $t2, 76($t0)
+	
+	jr $ra
+
+get_element_in_board_matrix:
+	la $t0, player_board_matrix
+	lw $t1, player_board_cols
+	
+	mul $t2, $a1, $t1 # row * columns
+	add $t2, $t2, $a0 # (row * columns) + column
+	sll $t2, $t2, 2 # ((row * columns) + column) * 4
+	add $t0, $t0, $t2 # base + offset
+	
+	lw $v0, 0($t0)
+	jr $ra
+
+set_element_in_board_matrix:
+	la $t0, player_board_matrix
+	lw $t1, player_board_cols
+	
+	mul $t2, $a1, $t1 # row * columns
+	add $t2, $t2, $a0 # (row * columns) + column
+	sll $t2, $t2, 2 # ((row * columns) + column) * 4
+	add $t0, $t0, $t2 # base + offset
+	
+	sw $a2, 0($t0)
 	jr $ra
 	
 exit:
