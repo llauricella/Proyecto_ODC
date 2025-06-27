@@ -232,6 +232,87 @@ continue_pb:
 	li $a0, 0
 	li $a1, 0
 	
+	j loop_input_pc
+	
+	redraw_carrier_pc:
+		move $t7, $a0
+		move $t8, $a1
+			
+		store_ra
+		jal coord_to_board_address #redraw
+		restore_ra
+		
+		move $s0, $v0
+		sw $t0, ($s0)
+			
+		li $t3, 0
+		beq $s2, BOAT_FACING_RIGHT, redraw_carrier_pc_right
+		beq $s2, BOAT_FACING_UP, redraw_carrier_pc_up
+			
+		redraw_carrier_pc_right:
+			add $t3, $a0, $t5
+				
+			redraw_carrier_pc_loop_right:
+				store_ra
+				jal coord_to_board_address
+				restore_ra
+				
+				sw $t0, ($v0)
+				add $a0, $a0, 1
+				beq $a0, $t3, redraw_carrier_pc_loop_done
+				j redraw_carrier_pc_loop_right
+					
+		redraw_carrier_pc_up:
+			add $t3, $a1, $t5
+				
+			redraw_carrier_pc_loop_up:
+				store_ra
+				jal coord_to_board_address
+				restore_ra
+					
+				sw $t0, ($v0)
+				add $a1, $a1, 1
+				beq $a1, $t3, redraw_carrier_pc_loop_done
+				j redraw_carrier_pc_loop_up
+					
+		redraw_carrier_pc_loop_done:
+			move $a0, $t7
+			move $a1, $t8
+			jr $ra
+		
+	undraw_carrier_pc:
+		move $t6, $s0
+		move $t8, $a1
+		sw $t1, ($t6)
+		li $t7, 1
+			
+		beq $s2, BOAT_FACING_RIGHT, undraw_carrier_pc_loop_right
+		
+		add $a1, $a1, $t5
+		
+		beq $s2, BOAT_FACING_UP, undraw_carrier_pc_loop_up
+		
+		undraw_carrier_pc_loop_up:
+			store_ra
+			jal coord_to_board_address
+			restore_ra
+				
+			sw $t1, ($v0)
+			sub $a1, $a1, 1
+			beq $a1, $t8, undraw_carrier_pc_loop_done
+			j undraw_carrier_pc_loop_up
+				
+		undraw_carrier_pc_loop_right:
+			add $t6, $t6, 4
+			sw $t1, ($t6)
+			add $t7, $t7, 1
+			beq $t7, $t5, undraw_carrier_pc_loop_done
+			j undraw_carrier_pc_loop_right
+					
+		undraw_carrier_pc_loop_done:
+			move $a1, $t8
+			jr $ra
+				
 	loop_input_pc:
 		li $v0, 12 # Read character
 		syscall
@@ -254,18 +335,25 @@ continue_pb:
 			jal check_coord_bounds_lower_screen
 			beqz $v0, move_carrier_right_out_of_bounds
 			
-			sw $t1, ($s0)
+			beq $s2, BOAT_FACING_UP, move_carrier_right_up_oriented_pc
+			beq $s2, BOAT_FACING_RIGHT, move_carrier_right_right_oriented_pc
 			
-			jal coord_to_board_address
-			sw $t0, ($v0)
+			move_carrier_right_up_oriented_pc:
+				j loop_input_pc
+				
+			move_carrier_right_right_oriented_pc:
+				sw $t1, ($s0)
 			
-			# Recalcular eje
-			sub $t6, $t5, 1			
-			sub $a0, $a0, $t6
-			jal coord_to_board_address
-			move $s0, $v0
+				jal coord_to_board_address
+				sw $t0, ($v0)
 			
-			j loop_input_pc
+				# Recalcular eje
+				sub $t6, $t5, 1			
+				sub $a0, $a0, $t6
+				jal coord_to_board_address
+				move $s0, $v0
+			
+				j loop_input_pc
 		
 		move_carrier_left_out_of_bounds:
 			add $a0, $a0, 1
@@ -276,110 +364,52 @@ continue_pb:
 			jal check_coord_bounds_lower_screen
 			beqz $v0, move_carrier_left_out_of_bounds
 			
-			add $a0, $a0, $t5
-			jal coord_to_board_address
-			sw $t1, ($v0)
+			beq $s2, BOAT_FACING_UP, move_carrier_left_up_oriented_pc
+			beq $s2, BOAT_FACING_RIGHT, move_carrier_left_right_oriented_pc
 			
-			sub $a0, $a0, $t5
-			jal coord_to_board_address
-			move $s0, $v0
-			sw $t0, ($s0)
-			
-			j loop_input_pc
-			
-		redraw_carrier_pc:
-			move $t7, $a0
-			move $t8, $a1
-			
-			store_ra
-			jal coord_to_board_address #redraw
-			restore_ra
-			
-			move $s0, $v0
-			sw $t0, ($s0)
-			
-			li $t3, 0
-			beq $s2, BOAT_FACING_RIGHT, redraw_carrier_pc_right
-			beq $s2, BOAT_FACING_UP, redraw_carrier_pc_up
-			
-			redraw_carrier_pc_right:
-				add $t3, $a0, $t5
+			move_carrier_left_up_oriented_pc:
+				j loop_input_pc
 				
-				redraw_carrier_pc_loop_right:
-					store_ra
-					jal coord_to_board_address
-					restore_ra
-				
-					sw $t0, ($v0)
-					add $a0, $a0, 1
-					beq $a0, $t3, redraw_carrier_pc_loop_done
-					j redraw_carrier_pc_loop_right
-					
-			redraw_carrier_pc_up:
-				add $t3, $a1, $t5
-				
-				redraw_carrier_pc_loop_up:
-					store_ra
-					jal coord_to_board_address
-					restore_ra
-					
-					sw $t0, ($v0)
-					add $a1, $a1, 1
-					beq $a1, $t3, redraw_carrier_pc_loop_done
-					j redraw_carrier_pc_loop_up
-					
-			redraw_carrier_pc_loop_done:
-				move $a0, $t7
-				move $a1, $t8
-				jr $ra
-		
-		undraw_carrier_pc:
-			move $t6, $s0
-			move $t8, $a1
-			sw $t1, ($t6)
-			li $t7, 1
-			
-			beq $s2, BOAT_FACING_RIGHT, undraw_carrier_pc_loop_right
-			beq $s2, BOAT_FACING_UP, undraw_carrier_pc_loop_up
-			
-			undraw_carrier_pc_loop_up:
-				add $a1, $a1, 1
-				
-				store_ra
+			move_carrier_left_right_oriented_pc:
+				add $a0, $a0, $t5
 				jal coord_to_board_address
-				restore_ra
-				
 				sw $t1, ($v0)
-				add $t7, $t7, 1
-				beq $t7, $t5, undraw_carrier_pc_loop_done
-				j undraw_carrier_pc_loop_up
-				
-			undraw_carrier_pc_loop_right:
-				add $t6, $t6, 4
-				sw $t1, ($t6)
-				add $t7, $t7, 1
-				beq $t7, $t5, undraw_carrier_pc_loop_done
-				j undraw_carrier_pc_loop_right
-					
-		undraw_carrier_pc_loop_done:
-			move $a1, $t8
-			jr $ra
+			
+				sub $a0, $a0, $t5
+				jal coord_to_board_address
+				move $s0, $v0
+				sw $t0, ($s0)
+
+			
+				j loop_input_pc
 				
 		move_carrier_up_out_of_bounds:
 			sub $a1, $a1, 1
 			j loop_input_pc
 			
 		move_carrier_up_pc:
-			add $a1, $a1, 1
-			jal check_coord_bounds_lower_screen
-			beqz $v0, move_carrier_up_out_of_bounds
+			beq $s2, BOAT_FACING_RIGHT, move_carrier_up_facing_right
+			beq $s2, BOAT_FACING_UP, move_carrier_up_facing_up
 			
-			# Undraw carrier
-			jal undraw_carrier_pc
+			move_carrier_up_facing_up:
+				add $a1, $a1, $t5
+				jal check_coord_bounds_lower_screen
+				sub $a1, $a1, $t5
+				beqz $v0, loop_input_pc
+				add $a1, $a1, 1
+				j move_carrier_up_continue
+				
+			move_carrier_up_facing_right:
+				add $a1, $a1, 1
+				jal check_coord_bounds_lower_screen
+				beqz $v0, move_carrier_up_out_of_bounds
 			
-			jal redraw_carrier_pc
+			move_carrier_up_continue:
+				jal undraw_carrier_pc
 			
-			j loop_input_pc
+				jal redraw_carrier_pc
+			
+				j loop_input_pc
 		
 		move_carrier_down_out_of_bounds:
 			add $a1, $a1, 1
