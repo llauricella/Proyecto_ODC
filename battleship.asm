@@ -34,6 +34,10 @@
 	menu_start_msg: .asciiz "----- BATTLESHIP -----\n\nIntroduce una de las siguientes opciones para continuar:\n\n1 - Jugar contra el CPU\n2 - Jugar contra otro jugador\n3 - Salir\n-> "
 	menu_arrow: .asciiz "-> "
 	
+	# Mensajes de posición
+	menu_rotate_out_of_bounds_right: .asciiz "\n¡No se puede rotar! Revisa si hay suficiente espacio a la derecha.\n"
+	menu_rotate_out_of_bounds_up: .asciiz "\n¡No se puede rotar! Revisa si hay suficiente espacio arriba.\n"
+	
 .text
 	.globl main
 
@@ -163,7 +167,7 @@ start_player_boat_positioning:
 	li $a0, BOAT_TYPE_DESTROYER
 	jal position_boat
 	
-	li $a0, BOAT_TYPE_SUBARMINE
+	li $a0, BOAT_TYPE_SUBMARINE
 	jal position_boat
 	
 	li $a0, BOAT_TYPE_PATROL_BOAT
@@ -177,12 +181,14 @@ start_player_boat_positioning:
 # $a0 = tipo de barco
 # FIXME: No borrar un barco ya puesto si el nuevo le pasa por encima
 position_boat:
-	sub $sp, $sp, 12
-	sw $ra, 8($sp)
-	sw $s0, 4($sp)
-	sw $s1, 0($sp)
+	sub $sp, $sp, 16
+	sw $ra, 12($sp)
+	sw $s0, 8($sp)
+	sw $s1, 4($sp)
+	sw $s2, 0($sp)
 	
 	move $s1, $a0
+	li $s2, BOAT_FACING_RIGHT
 	
 	beq $s1, BOAT_TYPE_CARRIER, set_carrier_pb
 	beq $s1, BOAT_TYPE_BATTLESHIP, set_battleship_pb
@@ -234,6 +240,7 @@ continue_pb:
 		beq $v0, 'a', move_carrier_left_pc
 		beq $v0, 'w', move_carrier_up_pc
 		beq $v0, 's', move_carrier_down_pc
+		beq $v0, 'r', rotate_carrier_pc
 		beq $v0, 'e', place_carrier_pc
 		
 		j loop_input_pc
@@ -281,6 +288,9 @@ continue_pb:
 			j loop_input_pc
 			
 		redraw_carrier_pc:
+			move $t7, $a0
+			move $t8, $a1
+			
 			store_ra
 			jal coord_to_board_address #redraw
 			restore_ra
@@ -288,39 +298,72 @@ continue_pb:
 			move $s0, $v0
 			sw $t0, ($s0)
 			
-			move $t4, $a0
-			add $t3, $a0, $t5
-			add $a0, $a0, 1
+			li $t3, 0
+			beq $s2, BOAT_FACING_RIGHT, redraw_carrier_pc_right
+			beq $s2, BOAT_FACING_UP, redraw_carrier_pc_up
 			
-			redraw_carrier_pc_loop:
+			redraw_carrier_pc_right:
+				add $t3, $a0, $t5
+				
+				redraw_carrier_pc_loop_right:
+					store_ra
+					jal coord_to_board_address
+					restore_ra
+				
+					sw $t0, ($v0)
+					add $a0, $a0, 1
+					beq $a0, $t3, redraw_carrier_pc_loop_done
+					j redraw_carrier_pc_loop_right
+					
+			redraw_carrier_pc_up:
+				add $t3, $a1, $t5
+				
+				redraw_carrier_pc_loop_up:
+					store_ra
+					jal coord_to_board_address
+					restore_ra
+					
+					sw $t0, ($v0)
+					add $a1, $a1, 1
+					beq $a1, $t3, redraw_carrier_pc_loop_done
+					j redraw_carrier_pc_loop_up
+					
+			redraw_carrier_pc_loop_done:
+				move $a0, $t7
+				move $a1, $t8
+				jr $ra
+		
+		undraw_carrier_pc:
+			move $t6, $s0
+			move $t8, $a1
+			sw $t1, ($t6)
+			li $t7, 1
+			
+			beq $s2, BOAT_FACING_RIGHT, undraw_carrier_pc_loop_right
+			beq $s2, BOAT_FACING_UP, undraw_carrier_pc_loop_up
+			
+			undraw_carrier_pc_loop_up:
+				add $a1, $a1, 1
+				
 				store_ra
 				jal coord_to_board_address
 				restore_ra
 				
-				sw $t0, ($v0)
-				add $a0, $a0, 1
-				beq $a0, $t3, redraw_carrier_pc_loop_done
+				sw $t1, ($v0)
+				add $t7, $t7, 1
+				beq $t7, $t5, undraw_carrier_pc_loop_done
+				j undraw_carrier_pc_loop_up
 				
-				j redraw_carrier_pc_loop
-		
-		redraw_carrier_pc_loop_done:
-			move $a0, $t4
-			jr $ra
-		
-		undraw_carrier_pc:
-			move $t6, $s0 # undraw carrier
-			sw $t1, ($t6)
-			li $t7, 1
-			
-			undraw_carrier_pc_loop:
+			undraw_carrier_pc_loop_right:
 				add $t6, $t6, 4
 				sw $t1, ($t6)
 				add $t7, $t7, 1
 				beq $t7, $t5, undraw_carrier_pc_loop_done
-				j undraw_carrier_pc_loop
+				j undraw_carrier_pc_loop_right
 					
-			undraw_carrier_pc_loop_done:
-				jr $ra
+		undraw_carrier_pc_loop_done:
+			move $a1, $t8
+			jr $ra
 				
 		move_carrier_up_out_of_bounds:
 			sub $a1, $a1, 1
@@ -353,7 +396,58 @@ continue_pb:
 			jal redraw_carrier_pc
 			
 			j loop_input_pc
+		
+		rotate_carrier_up_out_of_bounds:
+			move $t9, $a0
+			print_message(menu_rotate_out_of_bounds_up)
+			move $a0, $t9
+			move $a1, $t3
+			j loop_input_pc
+		
+		rotate_carrier_right_out_of_bounds:
+			move $t9, $a0
+			print_message(menu_rotate_out_of_bounds_right)
+			move $a0, $t9
+			move $a0, $t3
+			j loop_input_pc
 			
+		rotate_carrier_pc:
+			beq $s2, BOAT_FACING_RIGHT, rotate_carrier_up_pc
+			beq $s2, BOAT_FACING_UP, rotate_carrier_right_pc
+			
+			rotate_carrier_up_pc:
+				move $t3, $a1
+				add $a1, $a1, $t5
+				sub $a1, $a1, 1
+				jal check_coord_bounds_lower_screen
+				beqz $v0, rotate_carrier_up_out_of_bounds
+				
+				move $a1, $t3
+				
+				jal undraw_carrier_pc
+				
+				li $s2, BOAT_FACING_UP
+				
+				jal redraw_carrier_pc
+				
+				j loop_input_pc
+			rotate_carrier_right_pc:
+				move $t3, $a0
+				add $a0, $a0, $t5
+				sub $a0, $a0, 1
+				jal check_coord_bounds_lower_screen
+				beqz $v0, rotate_carrier_right_out_of_bounds
+				
+				move $a0, $t3
+				
+				jal undraw_carrier_pc
+				
+				li $s2, BOAT_FACING_RIGHT
+				
+				jal redraw_carrier_pc
+				
+				j loop_input_pc
+				
 		place_carrier_pc:
 			# TODO: Revisar overlapping con otros barcos
 			
@@ -380,10 +474,11 @@ continue_pb:
 				j place_carrier_loop
 			
 	loop_input_pc_done:
-		lw $s1, 0($sp)
-		lw $s0, 4($sp)
-		lw $ra, 8($sp)
-		add $sp, $sp, 12
+		lw $s2, 0($sp)
+		lw $s1, 4($sp)
+		lw $s0, 8($sp)
+		lw $ra, 12($sp)
+		add $sp, $sp, 16
 	
 		jr $ra
 	
