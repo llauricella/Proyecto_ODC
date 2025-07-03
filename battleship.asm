@@ -26,7 +26,18 @@
 	# Posición de los barcos del jugador principal
 	player_boat_data: .word 0:20
 		
-	player_board_matrix: .word 0:128
+	player_board_matrix:
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		
 	player_board_rows: .word 8
 	player_board_cols: .word 16
 		
@@ -112,7 +123,7 @@ get_from_array:
 	jr $ra
 
 
-# Convierte una coordenada en el rango [0, 16) a la dirección de memoria correspondiente en el tablero
+# Convierte una coordenada en el rango (x, y) ϵ [0, 16) a la dirección de memoria correspondiente en el tablero
 # gracias! https://stackoverflow.com/a/47697769
 coord_to_board_address:
 	sub $sp, $sp, 4
@@ -186,11 +197,11 @@ position_boat:
 	sw $s0, 12($sp)
 	sw $s1, 8($sp)
 	sw $s2, 4($sp)
-	sw $s3, 0($sp) # flag: dibujar gris (podriamos usar operaciones de bits y almacenar todas las flags aqui)
+	sw $s3, 0($sp) # flag: dibujar gris (podriamos usar operaciones de bits y almacenar todas las flags aqui) (ahora si se hace)
 	
-	li $s3, 0
 	move $s1, $a0
 	li $s2, BOAT_FACING_RIGHT
+	li $s3, 0
 	
 	beq $s1, BOAT_TYPE_CARRIER, set_carrier_pb
 	beq $s1, BOAT_TYPE_BATTLESHIP, set_battleship_pb
@@ -334,6 +345,54 @@ continue_pb:
 			jr $ra
 				
 	loop_input_pc:
+		# Revisar si el barco está haciendo overlapping con otro barco
+		# debe haber una mejor manera de hacer esto
+		move $t8, $a0
+		move $t9, $a1
+		clear_bit($s3, FLAG_BOAT_OVERLAPPING)
+		load_color($t4, 2)
+		
+		beq $s2, BOAT_FACING_UP, check_overlapping_up_pc
+		
+		check_overlapping_right_pc:
+			add $t3, $a0, $t5
+			
+			check_overlapping_right_loop_pc:
+				jal get_element_in_board_matrix
+				bnez $v0, set_overlapping_right
+			check_overlaping_right_loop_pc_continue:
+				add $a0, $a0, 1
+				beq $a0, $t3, loop_input_pc_continue
+				j check_overlapping_right_loop_pc
+				
+			set_overlapping_right:
+				set_bit($s3, FLAG_BOAT_OVERLAPPING)
+				jal coord_to_board_address
+				sw $t4, ($v0)
+				j check_overlaping_right_loop_pc_continue
+				
+		check_overlapping_up_pc:
+			add $t3, $a1, $t5
+			
+			check_overlapping_up_loop_pc:
+				jal get_element_in_board_matrix
+				bnez $v0, set_overlapping_up
+			check_overlapping_up_loop_pc_continue:
+				add $a1, $a1, 1
+				beq $a1, $t3, loop_input_pc_continue
+				j check_overlapping_up_loop_pc
+				
+			set_overlapping_up:
+				set_bit($s3, FLAG_BOAT_OVERLAPPING)
+				jal coord_to_board_address
+				sw $t4, ($v0)
+				j check_overlapping_up_loop_pc_continue
+	
+		
+	loop_input_pc_continue:
+		move $a0, $t8
+		move $a1, $t9
+		
 		li $v0, 12 # Read character
 		syscall
 		
@@ -531,9 +590,39 @@ continue_pb:
 		place_carrier_pc:
 			# TODO: Revisar overlapping con otros barcos
 			
-			li $s3, 1
+			toggle_bit($s3, FLAG_BOAT_PLACED)
 			jal redraw_carrier_pc
-			li $s3, 0
+			toggle_bit($s3, FLAG_BOAT_PLACED)
+			
+			
+			la $a2, player_boat_data
+			sll $s1, $s1, 4 # ya a este punto no se usa $s1 so whatever
+			add $a2, $a2, $s1 # player_boat_data + offset
+			
+			# Guardar coordenadas del eje y orientación del barco
+			sw $a0, 4($a2)
+			sw $a1, 8($a2)
+			sw $s2, 12($a2)
+			
+			beq $s2, BOAT_FACING_RIGHT, place_carrier_set_data_right
+			
+			place_carrier_set_data_up:
+				add $t8, $a1, $t5
+				
+				place_carrier_set_data_loop_up:
+					jal set_element_in_board_matrix
+					add $a1, $a1, 1
+					beq $a1, $t8, loop_input_pc_done
+					j place_carrier_set_data_loop_up
+					
+			place_carrier_set_data_right:
+				add $t8, $a0, $t5
+				
+				place_carrier_set_data_loop_right:
+					jal set_element_in_board_matrix
+					add $a0, $a0, 1
+					beq $a0, $t8, loop_input_pc_done
+					j place_carrier_set_data_loop_right
 			
 	loop_input_pc_done:
 		lw $s3, 0($sp)
@@ -544,7 +633,7 @@ continue_pb:
 		add $sp, $sp, 20
 	
 		jr $ra
-	
+		
 initialize_player_boat_data:
 	la $t0, player_boat_data
 	li $t2, BOAT_FACING_RIGHT
@@ -587,27 +676,49 @@ initialize_player_boat_data:
 	jr $ra
 
 get_element_in_board_matrix:
-	la $t0, player_board_matrix
-	lw $t1, player_board_cols
+	sub $sp, $sp, 12
+	sw $s0, 8($sp)
+	sw $s1, 4($sp)
+	sw $s2, 0($sp)
 	
-	mul $t2, $a1, $t1 # row * columns
-	add $t2, $t2, $a0 # (row * columns) + column
-	sll $t2, $t2, 2 # ((row * columns) + column) * 4
-	add $t0, $t0, $t2 # base + offset
+	la $s0, player_board_matrix
+	lw $s1, player_board_rows
 	
-	lw $v0, 0($t0)
+	mul $s2, $s1, $a1 # (rows * y)
+	add $s2, $s2, $a0 # (rows * y + x)
+	sll $s2, $s2, 2 # (rows * y + x) * 4
+	add $s0, $s0, $s2 # base + offset
+	
+	lw $v0, ($s0)
+	
+	lw $s2, 0($sp)
+	lw $s1, 4($sp)
+	lw $s0, 8($sp)
+	add $sp, $sp, 12
+	
 	jr $ra
 
 set_element_in_board_matrix:
-	la $t0, player_board_matrix
-	lw $t1, player_board_cols
+	sub $sp, $sp, 12
+	sw $s0, 8($sp)
+	sw $s1, 4($sp)
+	sw $s2, 0($sp)
 	
-	mul $t2, $a1, $t1 # row * columns
-	add $t2, $t2, $a0 # (row * columns) + column
-	sll $t2, $t2, 2 # ((row * columns) + column) * 4
-	add $t0, $t0, $t2 # base + offset
+	la $s0, player_board_matrix
+	lw $s1, player_board_rows
 	
-	sw $a2, 0($t0)
+	mul $s2, $s1, $a1
+	add $s2, $s2, $a0
+	sll $s2, $s2, 2
+	add $s0, $s0, $s2
+	
+	sw $a2, ($s0)
+	
+	lw $s2, 0($sp)
+	lw $s1, 4($sp)
+	lw $s0, 8($sp)
+	add $sp, $sp, 12
+	
 	jr $ra
 	
 exit:

@@ -15,6 +15,11 @@
 .eqv OFFSET_SUBMARINE 48
 .eqv OFFSET_PATROL_BOAT 64
 
+# enum flags : std::uint_8 {
+# :(
+.eqv FLAG_BOAT_PLACED 1
+.eqv FLAG_BOAT_OVERLAPPING 2
+
 .macro read_integer
 	li $v0, 5
 	syscall
@@ -45,12 +50,20 @@
 .end_macro
 
 .macro load_color(%reg, %idx)
+	sub $sp, $sp, 8
+	sw $a0, 4($sp)
+	sw $a1, 0($sp)
+	
 	la $a0, screen_colors
 	li $a1, %idx
 	store_ra
 	jal get_from_array
 	restore_ra
 	move %reg, $v0
+	
+	lw $a1, 0($sp)
+	lw $a0, 4($sp)
+	add $sp, $sp, 8
 .end_macro
 
 .macro sleep(%time)
@@ -58,3 +71,33 @@
 	li $v0, 32 # sleep en MARS
 	syscall
 .end_macro
+
+# para fines de legibilidad
+
+.macro set_bit(%reg, %bit)
+	ori %reg, %reg, %bit
+.end_macro
+
+.macro bit_is_set(%dest, %reg, %bit)
+	andi %dest, %reg, %bit
+	sgt %dest, %dest, $zero
+.end_macro
+
+.macro toggle_bit(%reg, %bit)
+	xori %reg, %reg, %bit
+.end_macro
+
+.macro clear_bit(%reg, %bit)
+	sub $sp, $sp, 4
+	sw $t0, 0($sp)
+	
+	li $t0, 1
+	sll $t0, $t0, %bit
+	not $t0, $t0
+	and %reg, %reg, $t0
+	
+	lw $t0, 0($sp)
+	add $sp, $sp, 4
+.end_macro
+
+
