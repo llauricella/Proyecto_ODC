@@ -533,6 +533,7 @@ continue_pb:
 			
 			li $s3, 1
 			jal redraw_carrier_pc
+			li $s3, 0
 			
 	loop_input_pc_done:
 		lw $s3, 0($sp)
