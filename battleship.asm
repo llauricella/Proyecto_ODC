@@ -27,16 +27,14 @@
 	player_boat_data: .word 0:20
 		
 	player_board_matrix:
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 		
 	player_board_rows: .word 8
 	player_board_cols: .word 16
@@ -48,6 +46,11 @@
 	# Mensajes de posición
 	menu_rotate_out_of_bounds_right: .asciiz "\n¡No se puede rotar! Revisa si hay suficiente espacio a la derecha.\n"
 	menu_rotate_out_of_bounds_up: .asciiz "\n¡No se puede rotar! Revisa si hay suficiente espacio arriba.\n"
+	menu_place_overlapping: .asciiz "\n¡No puedes poner un barco encima de otro!\n"
+	
+	debug_x: .asciiz "x: "
+	debug_y: .asciiz "y: "
+	debug_found: .asciiz "found: "
 	
 .text
 	.globl main
@@ -192,12 +195,13 @@ start_player_boat_positioning:
 # $a0 = tipo de barco
 # FIXME: No borrar un barco ya puesto si el nuevo le pasa por encima
 position_boat:
-	sub $sp, $sp, 20
-	sw $ra, 16($sp)
-	sw $s0, 12($sp)
-	sw $s1, 8($sp)
-	sw $s2, 4($sp)
-	sw $s3, 0($sp) # flag: dibujar gris (podriamos usar operaciones de bits y almacenar todas las flags aqui) (ahora si se hace)
+	sub $sp, $sp, 24
+	sw $ra, 20($sp)
+	sw $s0, 16($sp)
+	sw $s1, 12($sp)
+	sw $s2, 8($sp)
+	sw $s3, 4($sp) # flag: dibujar gris (podriamos usar operaciones de bits y almacenar todas las flags aqui) (ahora si se hace)
+	sw $s4, 0($sp)
 	
 	move $s1, $a0
 	li $s2, BOAT_FACING_RIGHT
@@ -223,23 +227,14 @@ position_boat:
 		li $t5, 2
 
 continue_pb:
-	load_color($t0, 4) # Amarillo
-	load_color($t1, 0) # Azul
-	load_color($t2, 1) # Gris
+	la $t9, screen_colors
+	lw $t0, COLOR_SELECTION($t9)
+	lw $t1, COLOR_WATER($t9)
+	lw $t2, COLOR_BOAT($t9)
+	lw $s4, COLOR_HIT($t9)
 	
 	# $s0 contiene el eje del barco
 	li $s0, 0
-	li $a0, 0
-	li $a1, 0
-	jal coord_to_board_address
-	move $s0, $v0
-	
-	loop_draw_pc:
-		jal coord_to_board_address
-
-		sw $t0, ($v0)
-		add $a0, $a0, 1
-		bne $a0, $t5, loop_draw_pc
 	
 	# Coordenada inicial
 	li $a0, 0
@@ -268,13 +263,24 @@ continue_pb:
 			redraw_carrier_pc_loop_right:
 				store_ra
 				jal coord_to_board_address
+				move $t9, $v0
+				
+				jal get_element_in_board_matrix
 				restore_ra
 				
-				beqz $s3, redraw_carrier_pc_loop_right_placing
+				bnez $v0, redraw_carrier_pc_loop_right_overlapping
+
+				move $v0, $t9
+				
+				bit_is_set($t9, $s3, FLAG_BOAT_PLACED)
+				beqz $t9, redraw_carrier_pc_loop_right_placing
 				# continua a right_placed si es otro valor
 				
 				redraw_carrier_pc_loop_right_placed:
 					sw $t2, ($v0)
+					j redraw_carrier_pc_loop_right_continue
+				redraw_carrier_pc_loop_right_overlapping:
+					sw $s4, ($t9)
 					j redraw_carrier_pc_loop_right_continue
 				redraw_carrier_pc_loop_right_placing:
 					sw $t0, ($v0)
@@ -290,13 +296,24 @@ continue_pb:
 			redraw_carrier_pc_loop_up:
 				store_ra
 				jal coord_to_board_address
+				move $t9, $v0
+				
+				jal get_element_in_board_matrix
 				restore_ra
 				
-				beqz $s3, redraw_carrier_pc_loop_up_placing
+				bnez $v0, redraw_carrier_pc_loop_up_overlapping
+				
+				move $v0, $t9
+				
+				bit_is_set($t9, $s3, FLAG_BOAT_PLACED)
+				beqz $t9, redraw_carrier_pc_loop_up_placing
 				# continua a up_placed si es otro valor
 				
 				redraw_carrier_pc_loop_up_placed:
 					sw $t2, ($v0)
+					j redraw_carrier_pc_loop_up_continue
+				redraw_carrier_pc_loop_up_overlapping:
+					sw $s4, ($t9)
 					j redraw_carrier_pc_loop_up_continue
 				redraw_carrier_pc_loop_up_placing:
 					sw $t0, ($v0)
@@ -350,7 +367,6 @@ continue_pb:
 		move $t8, $a0
 		move $t9, $a1
 		clear_bit($s3, FLAG_BOAT_OVERLAPPING)
-		load_color($t4, 2)
 		
 		beq $s2, BOAT_FACING_UP, check_overlapping_up_pc
 		
@@ -368,7 +384,7 @@ continue_pb:
 			set_overlapping_right:
 				set_bit($s3, FLAG_BOAT_OVERLAPPING)
 				jal coord_to_board_address
-				sw $t4, ($v0)
+				sw $s4, ($v0)
 				j check_overlaping_right_loop_pc_continue
 				
 		check_overlapping_up_pc:
@@ -385,13 +401,15 @@ continue_pb:
 			set_overlapping_up:
 				set_bit($s3, FLAG_BOAT_OVERLAPPING)
 				jal coord_to_board_address
-				sw $t4, ($v0)
+				sw $s4, ($v0)
 				j check_overlapping_up_loop_pc_continue
 	
-		
 	loop_input_pc_continue:
 		move $a0, $t8
 		move $a1, $t9
+
+		jal redraw_player_board
+		jal redraw_carrier_pc
 		
 		li $v0, 12 # Read character
 		syscall
@@ -588,12 +606,16 @@ continue_pb:
 				j loop_input_pc
 				
 		place_carrier_pc:
-			# TODO: Revisar overlapping con otros barcos
+			bit_is_set($t4, $s3, FLAG_BOAT_OVERLAPPING)
+			beqz $t4, place_carrier_pc_valid
 			
-			toggle_bit($s3, FLAG_BOAT_PLACED)
+			print_message(menu_place_overlapping)
+			j loop_input_pc
+			
+		place_carrier_pc_valid:
+			set_bit($s3, FLAG_BOAT_PLACED)
 			jal redraw_carrier_pc
 			toggle_bit($s3, FLAG_BOAT_PLACED)
-			
 			
 			la $a2, player_boat_data
 			sll $s1, $s1, 4 # ya a este punto no se usa $s1 so whatever
@@ -625,12 +647,13 @@ continue_pb:
 					j place_carrier_set_data_loop_right
 			
 	loop_input_pc_done:
-		lw $s3, 0($sp)
-		lw $s2, 4($sp)
-		lw $s1, 8($sp)
-		lw $s0, 12($sp)
-		lw $ra, 16($sp)
-		add $sp, $sp, 20
+		lw $s4, 0($sp)
+		lw $s3, 4($sp)
+		lw $s2, 8($sp)
+		lw $s1, 12($sp)
+		lw $s0, 16($sp)
+		lw $ra, 20($sp)
+		add $sp, $sp, 24
 	
 		jr $ra
 		
@@ -676,25 +699,22 @@ initialize_player_boat_data:
 	jr $ra
 
 get_element_in_board_matrix:
-	sub $sp, $sp, 12
-	sw $s0, 8($sp)
-	sw $s1, 4($sp)
-	sw $s2, 0($sp)
+	sub $sp, $sp, 8
+	sw $s0, 4($sp)
+	sw $s1, 0($sp)
 	
 	la $s0, player_board_matrix
-	lw $s1, player_board_rows
 	
-	mul $s2, $s1, $a1 # (rows * y)
-	add $s2, $s2, $a0 # (rows * y + x)
-	sll $s2, $s2, 2 # (rows * y + x) * 4
-	add $s0, $s0, $s2 # base + offset
+	sll $s1, $a1, 4 # y * 16
+	add $s1, $s1, $a0 # y * 16 + x
+	sll $s1, $s1, 2 # (y * 16 + x) * 4
+	add $s0, $s0, $s1 # base + offset
 	
 	lw $v0, ($s0)
 	
-	lw $s2, 0($sp)
-	lw $s1, 4($sp)
-	lw $s0, 8($sp)
-	add $sp, $sp, 12
+	lw $s1, 0($sp)
+	lw $s0, 4($sp)
+	add $sp, $sp, 8
 	
 	jr $ra
 
@@ -705,12 +725,11 @@ set_element_in_board_matrix:
 	sw $s2, 0($sp)
 	
 	la $s0, player_board_matrix
-	lw $s1, player_board_rows
 	
-	mul $s2, $s1, $a1
-	add $s2, $s2, $a0
-	sll $s2, $s2, 2
-	add $s0, $s0, $s2
+	sll $s2, $a1, 4 # y * 16
+	add $s2, $s2, $a0 # y * 16 + x
+	sll $s2, $s2, 2 # (y * 16 + x) * 4
+	add $s0, $s0, $s2 # base + offset
 	
 	sw $a2, ($s0)
 	
@@ -720,7 +739,74 @@ set_element_in_board_matrix:
 	add $sp, $sp, 12
 	
 	jr $ra
+
+# TODO: optimizar!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+redraw_player_board:
+	sub $sp, $sp, 24
+	sw $s4, 20($sp)
+	sw $s3, 16($sp)
+	sw $s2, 12($sp)
+	sw $s1, 8($sp)
+	sw $s0, 4($sp)
+	sw $ra, 0($sp)
 	
+	la $s4, screen_colors
+	lw $s2, COLOR_WATER($s4)
+	lw $s3, COLOR_BOAT($s4)
+	
+	move $s0, $a0
+	move $s1, $a1
+	
+	li $a0, 0
+	li $a1, 0
+	
+	redraw_player_board_loop:
+		#print_message(debug_x)
+		#print_integer($a0)
+		#print_linebreak
+		#print_message(debug_y)
+		#print_integer($a1)
+		#print_linebreak
+		jal get_element_in_board_matrix
+		#move $t9, $v0
+		#print_message(debug_found)
+		#print_integer_hex($t9)
+		#print_linebreak
+		#move $v0, $t9
+		bgtz $v0, rpb_loop_boat
+	
+	rpb_loop_water:
+		jal coord_to_board_address
+		sw $s2, ($v0)
+		j rpb_loop_continue
+	rpb_loop_boat:
+		jal coord_to_board_address
+		sw $s3, ($v0)
+		
+	rpb_loop_continue:
+		add $a0, $a0, 1
+		bgt $a0, 15, rpb_loop_inc_y
+		j redraw_player_board_loop
+	
+	rpb_loop_inc_y:
+		li $a0, 0
+		add $a1, $a1, 1
+		bgt $a1, 7, rpb_loop_done
+		j redraw_player_board_loop
+	
+rpb_loop_done:
+	move $a0, $s0
+	move $a1, $s1
+	
+	lw $s4, 20($sp)
+	lw $s3, 16($sp)
+	lw $s2, 12($sp)
+	lw $s1, 8($sp)
+	lw $s0, 4($sp)
+	lw $ra, 0($sp)
+	add $sp, $sp, 24
+	
+	jr $ra
 exit:
 	li $v0, 10
 	syscall

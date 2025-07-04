@@ -15,10 +15,24 @@
 .eqv OFFSET_SUBMARINE 48
 .eqv OFFSET_PATROL_BOAT 64
 
-# enum flags : std::uint_8 {
-# :(
 .eqv FLAG_BOAT_PLACED 1
 .eqv FLAG_BOAT_OVERLAPPING 2
+
+.eqv COLOR_WATER 0
+.eqv COLOR_BOAT 4
+.eqv COLOR_HIT 8
+.eqv COLOR_FAIL 12
+.eqv COLOR_SELECTION 16
+
+.macro print_linebreak
+	sub $sp, $sp, 4
+	sw $a0, 0($sp)
+	li $a0, '\n'
+	li $v0, 11
+	syscall 
+	lw $a0, 0($sp)
+	add $sp, $sp, 4
+.end_macro
 
 .macro read_integer
 	li $v0, 5
@@ -33,9 +47,33 @@
 .end_macro
 
 .macro print_message(%msg)
+	sub $sp, $sp, 4
+	sw $a0, 0($sp)
 	li $v0, 4
 	la $a0, %msg
 	syscall
+	lw $a0, 0($sp)
+	add $sp, $sp, 4
+.end_macro
+
+.macro print_integer(%reg)
+	sub $sp, $sp, 4
+	sw $a0, 0($sp)
+	li $v0, 1
+	move $a0, %reg
+	syscall
+	lw $a0, 0($sp)
+	add $sp, $sp, 4
+.end_macro
+
+.macro print_integer_hex(%reg)
+	sub $sp, $sp, 4
+	sw $a0, 0($sp)
+	li $v0, 34
+	move $a0, %reg
+	syscall
+	lw $a0, 0($sp)
+	add $sp, $sp, 4
 .end_macro
 
 # Para llamadas a funciones dentro de una función: almacena $ra en el stack
@@ -50,20 +88,14 @@
 .end_macro
 
 .macro load_color(%reg, %idx)
-	sub $sp, $sp, 8
-	sw $a0, 4($sp)
-	sw $a1, 0($sp)
+	sub $sp, $sp, 4
+	sw $s0, 0($sp)
 	
-	la $a0, screen_colors
-	li $a1, %idx
-	store_ra
-	jal get_from_array
-	restore_ra
-	move %reg, $v0
+	la $s0, screen_colors
+	lw %reg, %idx($s0)
 	
-	lw $a1, 0($sp)
-	lw $a0, 4($sp)
-	add $sp, $sp, 8
+	lw $s0, 0($sp)
+	add $sp, $sp, 4
 .end_macro
 
 .macro sleep(%time)
@@ -91,8 +123,7 @@
 	sub $sp, $sp, 4
 	sw $t0, 0($sp)
 	
-	li $t0, 1
-	sll $t0, $t0, %bit
+	li $t0, %bit
 	not $t0, $t0
 	and %reg, %reg, $t0
 	
