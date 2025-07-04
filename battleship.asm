@@ -22,12 +22,13 @@
 		.word 0xFF0000 # Rojo (Impacto)
 		.word 0xFFFFFF # Blanco (Fallo)
 		.word 0xFFFF00 # Amarillo (Selección)
+		.word 0x7700FF # Morado (superposiciòn)
 		
 	# Posición de los barcos del jugador principal
 	player_boat_data: .word 0:20
-		
-	player_board_matrix: .word 0:128
-	player_two_board_matrix: .word 0:128
+	cpu_boat_data: .word 0:20
+	
+	player_board_matrix: .word 0:256
 		
 	# Mensajes del menú
 	menu_start_msg: .asciiz "----- BATTLESHIP -----\n\nIntroduce una de las siguientes opciones para continuar:\n\n1 - Jugar contra el CPU\n2 - Jugar contra otro jugador\n3 - Salir\n-> "
@@ -37,6 +38,8 @@
 	menu_rotate_out_of_bounds_right: .asciiz "\n¡No se puede rotar! Revisa si hay suficiente espacio a la derecha.\n"
 	menu_rotate_out_of_bounds_up: .asciiz "\n¡No se puede rotar! Revisa si hay suficiente espacio arriba.\n"
 	menu_place_overlapping: .asciiz "\n¡No puedes poner un barco encima de otro!\n"
+	menu_place_hit: .asciiz "\nSelecciona el lugar de impacto con E, para moverlo utiliza las teclas WASD.\n"
+	menu_hit_already_placed: .asciiz "\n¡Ya disparaste a esta posiciòn!\n"
 	
 	debug_x: .asciiz "x: "
 	debug_y: .asciiz "y: "
@@ -72,6 +75,11 @@ main:
 		jal start_player_boat_positioning
 		
 		jal cpu_place_boats
+		
+		game_loop_select_target:
+			jal player_select_target
+			j game_loop_select_target
+			
 	menu_option_2:
 	menu_option_3:
 		j exit
@@ -148,13 +156,27 @@ check_coord_bounds_lower_screen:
 	bgt $a1, 7, invalid_ccbls
 	
 	li $v0, 1
-	
-	return_ccbls:
-		jr $ra
+
+	jr $ra
 		
 	invalid_ccbls:
 		li $v0, 0
-		j return_ccbls
+		jr $ra
+		
+check_coord_bounds_upper_screen:
+	blt $a0, 0, invalid_ccbus
+	bgt $a0, 15, invalid_ccbus
+	blt $a1, 8, invalid_ccbus
+	bgt $a1, 15, invalid_ccbus
+	
+	li $v0, 1
+	
+	jr $ra
+	
+	invalid_ccbus:
+		li $v0, 0
+		jr $ra
+	
 		
 start_player_boat_positioning:
 	# guardar $ra
@@ -168,9 +190,6 @@ start_player_boat_positioning:
 	jal position_boat
 	
 	li $a0, BOAT_TYPE_BATTLESHIP
-	jal position_boat
-	
-	li $a0, BOAT_TYPE_DESTROYER
 	jal position_boat
 	
 	li $a0, BOAT_TYPE_SUBMARINE
@@ -199,26 +218,10 @@ position_boat:
 	li $s2, BOAT_FACING_RIGHT
 	li $s3, 0
 	
-	beq $s1, BOAT_TYPE_CARRIER, set_carrier_pb
-	beq $s1, BOAT_TYPE_BATTLESHIP, set_battleship_pb
-	beq $s1, BOAT_TYPE_DESTROYER, set_destroyer_pb
-	beq $s1, BOAT_TYPE_SUBMARINE, set_submarine_pb
-	beq $s1, BOAT_TYPE_PATROL_BOAT, set_patrol_boat_pb
+	# Calcular cuantas casillas toma un barco
+	li $t5, 5
+	sub $t5, $t5, $s1
 	
-	set_carrier_pb:
-		li $t5, 5
-		j continue_pb
-	set_battleship_pb:
-		li $t5, 4
-		j continue_pb
-	set_destroyer_pb:
-	set_submarine_pb:
-		li $t5, 3
-		j continue_pb
-	set_patrol_boat_pb:
-		li $t5, 2
-
-continue_pb:
 	la $t9, screen_colors
 	lw $t0, COLOR_SELECTION($t9)
 	lw $t1, COLOR_WATER($t9)
@@ -257,6 +260,7 @@ continue_pb:
 				jal coord_to_board_address
 				move $t9, $v0
 				
+				la $a2, player_board_matrix
 				jal get_element_in_board_matrix
 				restore_ra
 				
@@ -291,6 +295,7 @@ continue_pb:
 				jal coord_to_board_address
 				move $t9, $v0
 				
+				la $a2, player_board_matrix
 				jal get_element_in_board_matrix
 				restore_ra
 				
@@ -569,6 +574,7 @@ continue_pb:
 			jal redraw_carrier_pc
 			toggle_bit($s3, FLAG_BOAT_PLACED)
 			
+			la $a3, player_board_matrix
 			la $a2, player_boat_data
 			sll $s1, $s1, 4 # ya a este punto no se usa $s1 so whatever
 			add $a2, $a2, $s1 # player_boat_data + offset
@@ -617,6 +623,218 @@ cpu_place_boats:
 	add $sp, $sp, 4
 	
 	jr $ra
+
+player_select_target:
+	sub $sp, $sp, 24
+	sw $s4, 20($sp)
+	sw $s3, 16($sp)
+	sw $s2, 12($sp)
+	sw $s1, 8($sp)
+	sw $s0, 4($sp)
+	sw $ra, 0($sp)
+	
+	li $v0, 4
+	la $a0, menu_place_hit
+	syscall
+	
+	la $t0, screen_colors
+	lw $s0, COLOR_SELECTION($t0)
+	lw $s1, COLOR_HIT($t0)
+	lw $s2, COLOR_FAIL($t0)
+	lw $s3, COLOR_OVERLAPPING($t0)
+	
+	li $a0, 0
+	li $a1, 8
+	
+	jal coord_to_board_address
+	move $s4, $v0
+	
+	la $a2, player_board_matrix
+	jal get_element_in_board_matrix
+	sw $s0, ($s4)
+	beqz $v0, player_select_target_loop
+	
+	sw $s3, ($s4)
+	
+	j player_select_target_loop
+		
+	player_select_target_loop_redraw:
+		sub $sp, $sp, 4
+		sw $ra, 0($sp)
+		
+		jal coord_to_board_address
+
+		 beq $s4, HIT_TYPE_NONE, player_select_target_loop_redraw_none
+		 beq $s4, HIT_TYPE_MISS, player_select_target_loop_redraw_miss
+		 beq $s4, HIT_TYPE_CORRECT, player_select_target_loop_redraw_hit
+		 
+		 player_select_target_loop_redraw_none:
+		 	la $t0, screen_colors
+		 	lw $t0, COLOR_WATER($t0)
+		 	sw $t0, ($v0)
+		 	j player_select_target_loop_redraw_done
+		 	
+		 player_select_target_loop_redraw_miss:
+		 	sw $s2, ($v0)
+		 	j player_select_target_loop_redraw_done
+		 	
+		 player_select_target_loop_redraw_hit:
+		 	sw $s1, ($v0)
+  	
+	player_select_target_loop_redraw_done:
+		lw $ra, 0($sp)
+		add $sp, $sp, 4
+		
+		jr $ra
+		
+	player_select_target_loop:
+		li $v0, 12
+		syscall
+		
+		beq $v0, 'w', player_target_move_up
+		beq $v0, 's', player_target_move_down
+		beq $v0, 'a', player_target_move_left
+		beq $v0, 'd', player_target_move_right
+		beq $v0, 'e', player_target_hit
+		
+		j player_select_target_loop
+		
+		player_target_move_up:
+			add $a1, $a1, 1
+			jal check_coord_bounds_upper_screen
+			sub $a1, $a1, 1
+			beqz $v0, player_select_target_loop
+			
+			la $a2, player_board_matrix
+			jal get_element_in_board_matrix
+			move $s4, $v0
+			
+			jal player_select_target_loop_redraw
+			add $a1, $a1, 1
+			jal coord_to_board_address
+			move $t0, $v0
+			
+			jal get_element_in_board_matrix
+			bnez $v0, player_target_move_up_overlapping
+			
+			sw $s0, ($t0)
+			j player_select_target_loop
+			
+			player_target_move_up_overlapping:
+				sw $s3, ($t0)
+				j player_select_target_loop
+				
+		player_target_move_down:
+			sub $a1, $a1, 1
+			jal check_coord_bounds_upper_screen
+			add $a1, $a1, 1
+			beqz $v0, player_select_target_loop
+			
+			la $a2, player_board_matrix
+			jal get_element_in_board_matrix
+			move $s4, $v0
+			
+			jal player_select_target_loop_redraw
+			sub $a1, $a1, 1
+			jal coord_to_board_address
+			move $t0, $v0
+			
+			jal get_element_in_board_matrix
+			bnez $v0, player_target_move_down_overlapping
+			
+			sw $s0, ($t0)
+			j player_select_target_loop
+			
+			player_target_move_down_overlapping:
+				sw $s3, ($t0)
+				j player_select_target_loop
+				
+		player_target_move_left:
+			sub $a0, $a0, 1
+			jal check_coord_bounds_upper_screen
+			add $a0, $a0, 1
+			beqz $v0, player_select_target_loop
+			
+			la $a2, player_board_matrix
+			jal get_element_in_board_matrix
+			move $s4, $v0
+			
+			jal player_select_target_loop_redraw
+			sub $a0, $a0, 1
+			sub $v0, $v0, 4
+			move $t0, $v0
+			
+			jal get_element_in_board_matrix
+			bnez $v0, player_target_move_left_overlapping
+			
+			sw $s0, ($t0)
+			j player_select_target_loop
+			
+			player_target_move_left_overlapping:
+				sw $s3, ($t0)
+				j player_select_target_loop
+			
+		player_target_move_right:
+			add $a0, $a0, 1
+			jal check_coord_bounds_upper_screen
+			sub $a0, $a0, 1
+			beqz $v0, player_select_target_loop
+			
+			la $a2, player_board_matrix
+			jal get_element_in_board_matrix
+			move $s4, $v0
+			
+			jal player_select_target_loop_redraw
+			
+			add $a0, $a0, 1
+			add $v0, $v0, 4
+			move $t0, $v0
+			
+			jal get_element_in_board_matrix
+			bnez $v0, player_target_move_right_overlapping
+			
+			sw $s0, ($t0)
+			j player_select_target_loop
+			
+			player_target_move_right_overlapping:
+				sw $s3, ($t0)
+				j player_select_target_loop
+		
+		player_target_hit:
+			la $a2, player_board_matrix
+			jal get_element_in_board_matrix
+			beqz $v0, player_target_hit_continue
+			
+			move $t0, $a0
+			
+			la $a0, menu_hit_already_placed
+			li $v0, 4
+			syscall
+			
+			move $a0, $t0
+			
+			j player_select_target_loop
+			
+		player_target_hit_continue:
+			jal coord_to_board_address
+			sw $s2, ($v0)
+			
+			li $a2, HIT_TYPE_MISS
+			la $a3, player_board_matrix
+			jal set_element_in_board_matrix
+			
+			j player_select_target_loop_done
+			
+	player_select_target_loop_done:
+		lw $s4, 20($sp)
+		lw $s3, 16($sp)
+		lw $s2, 12($sp)
+		lw $s1, 8($sp)
+		lw $s0, 4($sp)
+		lw $ra, 0($sp)
+		add $sp, $sp, 20
+	
+		jr $ra
 	
 initialize_player_boat_data:
 	la $t0, player_boat_data
@@ -624,38 +842,35 @@ initialize_player_boat_data:
 	
 	# Carrier
 	li $t1, BOAT_TYPE_CARRIER
-	sw $t1, 0($t0)
-	sw $zero, 4($t0)
-	sw $zero, 8($t0)
-	sw $t2, 12($t0)
+	sw $t1, 0($t0) # tipo
+	sw $zero, 4($t0) # x
+	sw $zero, 8($t0) # y
+	sw $t2, 12($t0) # orientacion
+	sw $zero, 16($t0) # numero de hits
 	
 	# Battleship
 	li $t1, BOAT_TYPE_BATTLESHIP
-	sw $t1, 16($t0)
-	sw $zero, 20($t0)
+	sw $t1, 20($t0)
 	sw $zero, 24($t0)
-	sw $t2, 28($t0)
-	
-	# Destroyer
-	li $t1, BOAT_TYPE_DESTROYER
-	sw $t1, 32($t0)
+	sw $zero, 28($t0)
+	sw $t2, 32($t0)
 	sw $zero, 36($t0)
-	sw $zero, 40($t0)
-	sw $t2, 44($t0)
 	
 	# Submarine
 	li $t1, BOAT_TYPE_SUBMARINE
-	sw $t1, 48($t0)
-	sw $zero, 52($t0)
+	sw $t1, 40($t0)
+	sw $zero, 44($t0)
+	sw $zero, 48($t0)
+	sw $t2, 52($t0)
 	sw $zero, 56($t0)
-	sw $t2, 60($t0)
 	
 	# Patrol Boat
 	li $t1, BOAT_TYPE_PATROL_BOAT
-	sw $t1, 64($t0)
+	sw $t1, 60($t0)
+	sw $zero, 64($t0)
 	sw $zero, 68($t0)
-	sw $zero, 72($t0)
-	sw $t2, 76($t0)
+	sw $t2, 72($t0)
+	sw $zero, 76($t0)
 	
 	jr $ra
 
@@ -664,7 +879,7 @@ get_element_in_board_matrix:
 	sw $s0, 4($sp)
 	sw $s1, 0($sp)
 	
-	la $s0, player_board_matrix
+	move $s0, $a2
 	
 	sll $s1, $a1, 4 # y * 16
 	add $s1, $s1, $a0 # y * 16 + x
@@ -685,7 +900,7 @@ set_element_in_board_matrix:
 	sw $s1, 4($sp)
 	sw $s2, 0($sp)
 	
-	la $s0, player_board_matrix
+	move $s0, $a3
 	
 	sll $s2, $a1, 4 # y * 16
 	add $s2, $s2, $a0 # y * 16 + x
@@ -728,6 +943,7 @@ redraw_player_board:
 		#print_message(debug_y)
 		#print_integer($a1)
 		#print_linebreak
+		la $a2, player_board_matrix
 		jal get_element_in_board_matrix
 		#move $t9, $v0
 		#print_message(debug_found)
