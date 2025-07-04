@@ -26,18 +26,8 @@
 	# Posición de los barcos del jugador principal
 	player_boat_data: .word 0:20
 		
-	player_board_matrix:
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		.word 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-		
-	player_board_rows: .word 8
-	player_board_cols: .word 16
+	player_board_matrix: .word 0:128
+	player_two_board_matrix: .word 0:128
 		
 	# Mensajes del menú
 	menu_start_msg: .asciiz "----- BATTLESHIP -----\n\nIntroduce una de las siguientes opciones para continuar:\n\n1 - Jugar contra el CPU\n2 - Jugar contra otro jugador\n3 - Salir\n-> "
@@ -80,9 +70,11 @@ main:
 		
 	menu_option_1:
 		jal start_player_boat_positioning
+		
+		jal cpu_place_boats
 	menu_option_2:
 	menu_option_3:
-		b exit
+		j exit
 
 # Función para vaciar el tablero en pantalla
 empty_screen_board:
@@ -280,6 +272,7 @@ continue_pb:
 					sw $t2, ($v0)
 					j redraw_carrier_pc_loop_right_continue
 				redraw_carrier_pc_loop_right_overlapping:
+					set_bit($s3, FLAG_BOAT_OVERLAPPING)
 					sw $s4, ($t9)
 					j redraw_carrier_pc_loop_right_continue
 				redraw_carrier_pc_loop_right_placing:
@@ -313,6 +306,7 @@ continue_pb:
 					sw $t2, ($v0)
 					j redraw_carrier_pc_loop_up_continue
 				redraw_carrier_pc_loop_up_overlapping:
+					set_bit($s3, FLAG_BOAT_OVERLAPPING)
 					sw $s4, ($t9)
 					j redraw_carrier_pc_loop_up_continue
 				redraw_carrier_pc_loop_up_placing:
@@ -324,6 +318,8 @@ continue_pb:
 				j redraw_carrier_pc_loop_up
 					
 		redraw_carrier_pc_loop_done:
+			#set_bit($s3, FLAG_REDRAW_BOARD)
+			
 			move $a0, $t7
 			move $a1, $t8
 			jr $ra
@@ -362,52 +358,8 @@ continue_pb:
 			jr $ra
 				
 	loop_input_pc:
-		# Revisar si el barco está haciendo overlapping con otro barco
-		# debe haber una mejor manera de hacer esto
-		move $t8, $a0
-		move $t9, $a1
 		clear_bit($s3, FLAG_BOAT_OVERLAPPING)
 		
-		beq $s2, BOAT_FACING_UP, check_overlapping_up_pc
-		
-		check_overlapping_right_pc:
-			add $t3, $a0, $t5
-			
-			check_overlapping_right_loop_pc:
-				jal get_element_in_board_matrix
-				bnez $v0, set_overlapping_right
-			check_overlaping_right_loop_pc_continue:
-				add $a0, $a0, 1
-				beq $a0, $t3, loop_input_pc_continue
-				j check_overlapping_right_loop_pc
-				
-			set_overlapping_right:
-				set_bit($s3, FLAG_BOAT_OVERLAPPING)
-				jal coord_to_board_address
-				sw $s4, ($v0)
-				j check_overlaping_right_loop_pc_continue
-				
-		check_overlapping_up_pc:
-			add $t3, $a1, $t5
-			
-			check_overlapping_up_loop_pc:
-				jal get_element_in_board_matrix
-				bnez $v0, set_overlapping_up
-			check_overlapping_up_loop_pc_continue:
-				add $a1, $a1, 1
-				beq $a1, $t3, loop_input_pc_continue
-				j check_overlapping_up_loop_pc
-				
-			set_overlapping_up:
-				set_bit($s3, FLAG_BOAT_OVERLAPPING)
-				jal coord_to_board_address
-				sw $s4, ($v0)
-				j check_overlapping_up_loop_pc_continue
-	
-	loop_input_pc_continue:
-		move $a0, $t8
-		move $a1, $t9
-
 		jal redraw_player_board
 		jal redraw_carrier_pc
 		
@@ -656,7 +608,16 @@ continue_pb:
 		add $sp, $sp, 24
 	
 		jr $ra
-		
+
+cpu_place_boats:
+	sub $sp, $sp, 4
+	sw $ra, 0($sp)
+	
+	lw $ra, 0($sp)
+	add $sp, $sp, 4
+	
+	jr $ra
+	
 initialize_player_boat_data:
 	la $t0, player_boat_data
 	li $t2, BOAT_FACING_RIGHT
