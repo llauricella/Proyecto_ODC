@@ -52,12 +52,18 @@
 	menu_place_boat: .asciiz "\nMueve el barco a posicionar con las teclas WASD. Usa R para rotarlo y E para confirmar su posición.\n"
 	menu_hit: .asciiz "\n¡IMPACTO!\n"
 	menu_boat_sinked: .asciiz "\n¡BARCO HUNDIDO!\n"
+	menu_hit_cpu: .asciiz "\nEl otro jugador ha impactado uno de tus barcos.\n"
+	menu_sink_cpu: .asciiz "\nEl otro jugador ha hundido uno de tus barcos.\n"
+	menu_cpu_turn: .asciiz "\nEl CPU está eligiendo un objetivo...\n"
 	
 	debug_x: .asciiz "x: "
 	debug_y: .asciiz "y: "
 	debug_found: .asciiz "found: "
 	debug_boat_right: .asciiz "bote horizontal"
 	debug_boat_up: .asciiz "bote vertical"
+	
+	cpu_last_hit_x: .word 0
+	cpu_last_hit_y: .word 0
 	
 .text
 	.globl main
@@ -102,6 +108,12 @@ main:
 		game_loop_select_target:
 			jal player_select_target
 			beq $v0, 1, game_loop_select_target
+			
+			la $a0, menu_cpu_turn
+			li $v0, 4
+			syscall
+			
+			jal cpu_select_target
 			
 			j game_loop_select_target
 			
@@ -1055,6 +1067,94 @@ player_select_target:
 		add $sp, $sp, 20
 	
 		jr $ra
+		
+cpu_select_target:
+	sub $sp, $sp, 12
+	sw $s1, 8($sp)
+	sw $s0, 4($sp)
+	sw $ra, 0($sp)
+	
+	cpu_select_target_loop:
+		li $a0, PRNG_ID
+		li $a1, 16
+		li $v0, 42
+		syscall
+		move $s0, $a0
+		
+		li $a0, PRNG_ID
+		syscall
+		move $s1, $a0
+		
+	cpu_select_target_loop_next:
+		move $a0, $s0
+		move $a1, $s1
+		
+		la $a2 targets_matrix
+		jal get_element_in_board_matrix
+		bnez $v0, cpu_select_target_loop
+		
+		la $a2, player_board_matrix
+		jal get_element_in_board_matrix
+		beqz $v0, cpu_select_target_loop_miss
+		
+		cpu_select_target_loop_hit:
+			move $t9, $v0
+			
+			jal coord_to_board_address
+			la $t0, screen_colors
+			lw $t0, COLOR_HIT($t0)
+			sw $t0, ($v0)
+			
+			li $a2, HIT_TYPE_CORRECT
+			la $a3, targets_matrix
+			jal set_element_in_board_matrix
+			
+			sw $s0, cpu_last_hit_x
+			sw $s1, cpu_last_hit_y
+			
+			print_message(menu_hit_cpu)
+			
+			lw $t0, 16($t9)
+			add $t0, $t0, 1
+			sw $t0, 16($t9)
+			
+			lw $t1, 0($t9)
+			li $t2, 5
+			sub $t1, $t2, $t1
+			beq $t0, $t1, cpu_select_target_loop_sink
+			
+			bge $a0, 15, cpu_next_hit_left
+			ble $a0, 0, cpu_next_hit_right
+			
+			cpu_next_hit_left:
+				sub $s0, $s0, 1
+				j cpu_select_target_loop_next
+				
+			cpu_next_hit_right:
+				add $s0, $s0, 1
+				j cpu_select_target_loop_next
+				
+			cpu_select_target_loop_sink:
+				print_message(menu_sink_cpu)
+				j cpu_select_target_loop
+			
+		cpu_select_target_loop_miss:
+			jal coord_to_board_address
+			la $t0, screen_colors
+			lw $t0, COLOR_FAIL($t0)
+			sw $t0, ($v0)
+			
+			li $a2, HIT_TYPE_MISS
+			la $a3, targets_matrix
+			jal set_element_in_board_matrix
+			
+cpu_select_target_done:
+	lw $s1, 8($sp)
+	lw $s0, 4($sp)
+	lw $ra, 0($sp)
+	add $sp, $sp, 12
+	
+	jr $ra
 	
 initialize_player_boat_data:
 	la $t0, player_boat_data
