@@ -47,6 +47,9 @@
 	menu_place_overlapping: .asciiz "\n¡No puedes poner un barco encima de otro!\n"
 	menu_place_hit: .asciiz "\nSelecciona el lugar de impacto con E, para moverlo utiliza las teclas WASD.\n"
 	menu_hit_already_placed: .asciiz "\n¡Ya disparaste a esta posiciòn!\n"
+	menu_wait_for_cpu_positioning: .asciiz "\nLa CPU está poniendo sus barcos...\n"
+	menu_clear_screen: .asciiz "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
+	menu_place_boat: .asciiz "\nMueve el barco a posicionar con las teclas WASD. Usa R para rotarlo y E para confirmar su posición.\n"
 	
 	debug_x: .asciiz "x: "
 	debug_y: .asciiz "y: "
@@ -81,7 +84,16 @@ main:
 	menu_option_1:
 		jal start_player_boat_positioning
 		
+		li $v0, 4
+		la $a0, menu_clear_screen
+		syscall
+		
+		la $a0, menu_wait_for_cpu_positioning
+		syscall
+		
 		jal cpu_place_boats
+		
+		sleep(2000)
 		
 		game_loop_select_target:
 			jal player_select_target
@@ -218,6 +230,14 @@ position_boat:
 	sw $s4, 0($sp)
 	
 	move $s1, $a0
+	
+	li $v0, 4
+	la $a0, menu_clear_screen
+	syscall
+	
+	la $a0, menu_place_boat
+	syscall
+	
 	li $s2, BOAT_FACING_RIGHT
 	li $s3, 0
 	
@@ -619,17 +639,20 @@ position_boat:
 		jr $ra
 
 cpu_place_boats:
-	sub $sp, $sp, 4
+	sub $sp, $sp, 12
+	sw $s1, 8($sp)
+	sw $s0, 4($sp)
 	sw $ra, 0($sp)
 	
-	li $a0, 1
-	li $a1, 1751782628
+	li $a0, PRNG_ID
+	li $a1, PRNG_SEED
 	li $v0, 40 # set seed
 	syscall
 	
 	li $t0, BOAT_TYPE_CARRIER
 	cpu_place_boats_loop:
 		# Orientación del barco (max 1)
+		li $a0, PRNG_ID
 		li $a1, 2
 		li $v0, 42
 		syscall
@@ -642,18 +665,130 @@ cpu_place_boats:
 		beq $t1, BOAT_FACING_RIGHT, cpu_place_boats_loop_right
 		
 		cpu_place_boats_loop_up:
-			#li $t3, 
+			li $t3, 16
+			sub $t3, $t3, $t5
+			add $t3, $t3, 1
+			
+			cpu_place_boats_loop_up_find:
+				li $a0, PRNG_ID
+				move $a1, $t3
+				li $v0, 42
+				syscall
+				
+				add $a0, $a0, 16 # 16 + rand_y [0, 16)
+				move $s1, $a0
+			
+				li $a0, PRNG_ID
+				li $a1, 16
+				syscall
+				
+				move $s0, $a0
+				
+				li $t4, 0
+				move $t8, $s1
+				la $a2, player_board_matrix
+				cpu_place_boats_loop_up_check:
+					move $a1, $t8
+					jal get_element_in_board_matrix
+					bnez $v0, cpu_place_boats_loop # comprobación fallida
+					
+					add $t4, $t4, 1
+					beq $t4, $t2, cpu_place_boats_loop_up_check_done
+					add $t8, $t8, 1
+					j cpu_place_boats_loop_up_check
+					
+				#cpu_place_boats_loop_up_check_failed:
+				#	j cpu_place_boats_loop
+					
+				cpu_place_boats_loop_up_check_done:
+					move $a0, $s0
+					move $a1, $s1
+					
+					mul $t5, $t0, 20
+					la $a2, cpu_boat_data
+					add $a2, $a2, $t5
+					
+					lw $s0, 4($a2)
+					lw $s1, 8($a2)
+					lw $t1, 12($a2)
+					
+					la $a3, player_board_matrix
+					
+					li $t4, 0
+					
+					cpu_place_boats_loop_up_place_data:
+						jal set_element_in_board_matrix
+						add $t4, $t4, 1
+						beq $t4, $t2, cpu_place_boats_loop_continue
+						add $a1, $a1, 1
+						j cpu_place_boats_loop_up_place_data
+						
 			j cpu_place_boats_loop_continue
 			
 		cpu_place_boats_loop_right:
+			li $t3, 16
+			sub $t3, $t3, $t5
+			add $t3, $t3, 1
 			
+			cpu_place_boats_loop_right_find:
+				li $a0, PRNG_ID
+				move $a1, $t3
+				li $v0, 42
+				syscall
+				
+				add $a0, $a0, 16 # 16 + rand_x [0, 16)
+				move $s0, $a0
+			
+				li $a0, PRNG_ID
+				li $a1, 16
+				syscall
+				
+				move $s1, $a0
+				
+				li $t4, 0
+				move $a0, $s0
+				la $a2, player_board_matrix
+				cpu_place_boats_loop_right_check:
+					jal get_element_in_board_matrix
+					bnez $v0, cpu_place_boats_loop # comprobación fallida
+					
+					add $t4, $t4, 1
+					beq $t4, $t2, cpu_place_boats_loop_right_check_done
+					add $s0, $s0, 1
+					j cpu_place_boats_loop_right_check
+					
+				cpu_place_boats_loop_right_check_done:
+					move $a0, $s0
+					move $a1, $s1
+					
+					mul $t5, $t0, 20
+					la $a2, cpu_boat_data
+					add $a2, $a2, $t5
+					
+					lw $s0, 4($a2)
+					lw $s1, 8($a2)
+					lw $t1, 12($a2)
+					
+					la $a3, player_board_matrix
+					
+					li $t4, 0
+					
+					cpu_place_boats_loop_right_place_data:
+						jal set_element_in_board_matrix
+						add $t4, $t4, 1
+						beq $t4, $t2, cpu_place_boats_loop_continue
+						add $a0, $a0, 1
+						j cpu_place_boats_loop_up_place_data
+						
 	cpu_place_boats_loop_continue:
 		add $t0, $t0, 1
 		bgt $t0, BOAT_TYPE_PATROL_BOAT, cpu_place_boats_done
 	
 cpu_place_boats_done:
+	lw $s1, 8($sp)
+	lw $s0, 4($sp)
 	lw $ra, 0($sp)
-	add $sp, $sp, 4
+	add $sp, $sp, 12
 	
 	jr $ra
 
