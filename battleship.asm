@@ -50,6 +50,8 @@
 	menu_wait_for_cpu_positioning: .asciiz "\nLa CPU está poniendo sus barcos...\n"
 	menu_clear_screen: .asciiz "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
 	menu_place_boat: .asciiz "\nMueve el barco a posicionar con las teclas WASD. Usa R para rotarlo y E para confirmar su posición.\n"
+	menu_hit: .asciiz "\n¡IMPACTO!\n"
+	menu_boat_sinked: .asciiz "\n¡BARCO HUNDIDO!\n"
 	
 	debug_x: .asciiz "x: "
 	debug_y: .asciiz "y: "
@@ -99,6 +101,8 @@ main:
 		
 		game_loop_select_target:
 			jal player_select_target
+			beq $v0, 1, game_loop_select_target
+			
 			j game_loop_select_target
 			
 	menu_option_2:
@@ -780,7 +784,7 @@ cpu_place_boats:
 					
 					la $a3, player_board_matrix
 					
-					li $t4, 0S
+					li $t4, 0
 					
 					cpu_place_boats_loop_right_place_data:
 						jal set_element_in_board_matrix
@@ -995,6 +999,42 @@ player_select_target:
 			j player_select_target_loop
 			
 		player_target_hit_continue:
+			la $a2, player_board_matrix
+			jal get_element_in_board_matrix
+			beqz $v0, player_target_hit_miss
+			
+		player_target_hit_correct:
+			move $t0, $v0
+			
+			li $a2, HIT_TYPE_CORRECT
+			la $a3, targets_matrix
+			jal set_element_in_board_matrix
+			
+			jal coord_to_board_address
+			sw $s1, ($v0)
+			
+			lw $t1, 16($t0)
+			add $t1, $t1, 1
+			sw $t1, 16($t0)
+			
+			print_message(menu_hit)
+			
+			lw $t2, 0($t0)
+			li $t3, 5
+			sub $t2, $t3, $t2
+			li $v0, 1
+			bne $t1, $t2, player_select_target_loop_done
+			
+			print_message(menu_boat_sinked)
+			
+			li $v0, 1
+			j player_select_target_loop_done
+		
+		player_target_hit_miss:
+			li $a2, HIT_TYPE_MISS
+			la $a3, targets_matrix
+			jal set_element_in_board_matrix
+			
 			jal coord_to_board_address
 			sw $s2, ($v0)
 			
@@ -1002,6 +1042,7 @@ player_select_target:
 			la $a3, targets_matrix
 			jal set_element_in_board_matrix
 			
+			li $v0, 0
 			j player_select_target_loop_done
 			
 	player_select_target_loop_done:
