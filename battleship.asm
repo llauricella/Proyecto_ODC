@@ -23,13 +23,20 @@
 		.word 0xFFFFFF # Blanco (Fallo)
 		.word 0xFFFF00 # Amarillo (Selección)
 		.word 0x7700FF # Morado (superposiciòn)
+	
+	boat_spaces:
+		.word 5
+		.word 4
+		.word 3
+		.word 2
 		
 	# Posición de los barcos del jugador principal
 	player_boat_data: .word 0:20
 	cpu_boat_data: .word 0:20
 	
-	player_board_matrix: .word 0:256
-		
+	player_board_matrix: .word 0:512
+	targets_matrix: .word 0:512
+	
 	# Mensajes del menú
 	menu_start_msg: .asciiz "----- BATTLESHIP -----\n\nIntroduce una de las siguientes opciones para continuar:\n\n1 - Jugar contra el CPU\n2 - Jugar contra otro jugador\n3 - Salir\n-> "
 	menu_arrow: .asciiz "-> "
@@ -60,11 +67,11 @@ main:
 		# Validar input
 		blt $v0, 1, invalid_menu_input
 		bgt $v0, 3, invalid_menu_input
-		b continue_menu_input
+		j continue_menu_input
 		
 	invalid_menu_input:
 		print_message(menu_arrow)
-		b process_menu_input
+		j process_menu_input
 		
 	continue_menu_input:
 		beq $v0, 1, menu_option_1
@@ -86,21 +93,17 @@ main:
 
 # Función para vaciar el tablero en pantalla
 empty_screen_board:
-	la $a0, screen_colors
-	li $a1, 0
+	la $t0, screen_colors
+	lw $t0, COLOR_WATER($t0)
 	
-	store_ra
-	jal get_from_array
-	restore_ra
-	
-	li $t0, 0
+	li $t1, 0
 	
 	loop_esb:
-		sw $v0, screen_board($t0)
+		sw $t0, screen_board($t1)
 		
-		beq $t0, BOARD_SIZE, return_esb
+		beq $t1, BOARD_SIZE, return_esb
 		
-		add $t0, $t0, 4
+		add $t1, $t1, 4
 		j loop_esb
 		
 	return_esb:
@@ -132,7 +135,8 @@ coord_to_board_address:
 	sub $sp, $sp, 4
 	sw $s0, 0($sp)
 	
-	xori $s0, $a1, 15 # La posición en y empieza desde el fondo del tablero
+	li $s0, 31
+	sub $s0, $s0, $a1
 	sll $s0, $s0, 4 # $s0 = (y * 16)
 	add $s0, $s0, $a0 # $s0 = (y * 16) + x
 	sll $s0, $s0, 2 # $s0 = ((y * 16) + x) * 4
@@ -153,7 +157,7 @@ check_coord_bounds_lower_screen:
 	blt $a0, 0, invalid_ccbls
 	bgt $a0, 15, invalid_ccbls
 	blt $a1, 0, invalid_ccbls
-	bgt $a1, 7, invalid_ccbls
+	bgt $a1, 15, invalid_ccbls
 	
 	li $v0, 1
 
@@ -166,8 +170,8 @@ check_coord_bounds_lower_screen:
 check_coord_bounds_upper_screen:
 	blt $a0, 0, invalid_ccbus
 	bgt $a0, 15, invalid_ccbus
-	blt $a1, 8, invalid_ccbus
-	bgt $a1, 15, invalid_ccbus
+	blt $a1, 16, invalid_ccbus
+	bgt $a1, 31, invalid_ccbus
 	
 	li $v0, 1
 	
@@ -204,7 +208,6 @@ start_player_boat_positioning:
 	jr $ra
 
 # $a0 = tipo de barco
-# FIXME: No borrar un barco ya puesto si el nuevo le pasa por encima
 position_boat:
 	sub $sp, $sp, 24
 	sw $ra, 20($sp)
@@ -619,6 +622,36 @@ cpu_place_boats:
 	sub $sp, $sp, 4
 	sw $ra, 0($sp)
 	
+	li $a0, 1
+	li $a1, 1751782628
+	li $v0, 40 # set seed
+	syscall
+	
+	li $t0, BOAT_TYPE_CARRIER
+	cpu_place_boats_loop:
+		# Orientación del barco (max 1)
+		li $a1, 2
+		li $v0, 42
+		syscall
+		move $t1, $a0
+		
+		# Calcular cuantos espacios toma el barco
+		li $t2, 5
+		sub $t2, $t2, $t0
+		
+		beq $t1, BOAT_FACING_RIGHT, cpu_place_boats_loop_right
+		
+		cpu_place_boats_loop_up:
+			#li $t3, 
+			j cpu_place_boats_loop_continue
+			
+		cpu_place_boats_loop_right:
+			
+	cpu_place_boats_loop_continue:
+		add $t0, $t0, 1
+		bgt $t0, BOAT_TYPE_PATROL_BOAT, cpu_place_boats_done
+	
+cpu_place_boats_done:
 	lw $ra, 0($sp)
 	add $sp, $sp, 4
 	
@@ -644,12 +677,12 @@ player_select_target:
 	lw $s3, COLOR_OVERLAPPING($t0)
 	
 	li $a0, 0
-	li $a1, 8
+	li $a1, 16
 	
 	jal coord_to_board_address
 	move $s4, $v0
 	
-	la $a2, player_board_matrix
+	la $a2, targets_matrix
 	jal get_element_in_board_matrix
 	sw $s0, ($s4)
 	beqz $v0, player_select_target_loop
@@ -705,7 +738,7 @@ player_select_target:
 			sub $a1, $a1, 1
 			beqz $v0, player_select_target_loop
 			
-			la $a2, player_board_matrix
+			la $a2, targets_matrix
 			jal get_element_in_board_matrix
 			move $s4, $v0
 			
@@ -730,7 +763,7 @@ player_select_target:
 			add $a1, $a1, 1
 			beqz $v0, player_select_target_loop
 			
-			la $a2, player_board_matrix
+			la $a2, targets_matrix
 			jal get_element_in_board_matrix
 			move $s4, $v0
 			
@@ -755,7 +788,7 @@ player_select_target:
 			add $a0, $a0, 1
 			beqz $v0, player_select_target_loop
 			
-			la $a2, player_board_matrix
+			la $a2, targets_matrix
 			jal get_element_in_board_matrix
 			move $s4, $v0
 			
@@ -780,7 +813,7 @@ player_select_target:
 			sub $a0, $a0, 1
 			beqz $v0, player_select_target_loop
 			
-			la $a2, player_board_matrix
+			la $a2, targets_matrix
 			jal get_element_in_board_matrix
 			move $s4, $v0
 			
@@ -801,7 +834,7 @@ player_select_target:
 				j player_select_target_loop
 		
 		player_target_hit:
-			la $a2, player_board_matrix
+			la $a2, targets_matrix
 			jal get_element_in_board_matrix
 			beqz $v0, player_target_hit_continue
 			
@@ -820,7 +853,7 @@ player_select_target:
 			sw $s2, ($v0)
 			
 			li $a2, HIT_TYPE_MISS
-			la $a3, player_board_matrix
+			la $a3, targets_matrix
 			jal set_element_in_board_matrix
 			
 			j player_select_target_loop_done
@@ -838,39 +871,60 @@ player_select_target:
 	
 initialize_player_boat_data:
 	la $t0, player_boat_data
+	la $t3, cpu_boat_data
 	li $t2, BOAT_FACING_RIGHT
 	
 	# Carrier
 	li $t1, BOAT_TYPE_CARRIER
 	sw $t1, 0($t0) # tipo
+	sw $t1, 0($t3)
 	sw $zero, 4($t0) # x
+	sw $zero, 4($t3)
 	sw $zero, 8($t0) # y
+	sw $zero, 8($t3)
 	sw $t2, 12($t0) # orientacion
+	sw $t2, 12($t3)
 	sw $zero, 16($t0) # numero de hits
+	sw $zero, 16($t3)
 	
 	# Battleship
 	li $t1, BOAT_TYPE_BATTLESHIP
-	sw $t1, 20($t0)
-	sw $zero, 24($t0)
-	sw $zero, 28($t0)
-	sw $t2, 32($t0)
-	sw $zero, 36($t0)
+	sw $t1, 20($t0) # tipo
+	sw $t1, 20($t3)
+	sw $zero, 24($t0) # x
+	sw $zero, 24($t3)
+	sw $zero, 28($t0) # y
+	sw $zero, 28($t3)
+	sw $t2, 32($t0) # orientacion
+	sw $t2, 32($t3)
+	sw $zero, 36($t0) # numero de hits
+	sw $zero, 36($t3)
 	
 	# Submarine
 	li $t1, BOAT_TYPE_SUBMARINE
-	sw $t1, 40($t0)
-	sw $zero, 44($t0)
-	sw $zero, 48($t0)
-	sw $t2, 52($t0)
-	sw $zero, 56($t0)
+	sw $t1, 40($t0) # tipo
+	sw $t1, 40($t3)
+	sw $zero, 44($t0) # x
+	sw $zero, 44($t3)
+	sw $zero, 48($t0) # y
+	sw $zero, 48($t3)
+	sw $t2, 52($t0) # orientacion
+	sw $t2, 52($t3)
+	sw $zero, 56($t0) # numero de hits
+	sw $zero, 56($t3)
 	
 	# Patrol Boat
 	li $t1, BOAT_TYPE_PATROL_BOAT
-	sw $t1, 60($t0)
-	sw $zero, 64($t0)
-	sw $zero, 68($t0)
-	sw $t2, 72($t0)
-	sw $zero, 76($t0)
+	sw $t1, 60($t0) # tipo
+	sw $t1, 60($t3)
+	sw $zero, 64($t0) # x
+	sw $zero, 64($t3)
+	sw $zero, 68($t0) # y
+	sw $zero, 68($t3)
+	sw $t2, 72($t0) # orientacion
+	sw $t2, 72($t3)
+	sw $zero, 76($t0) # numero de hits
+	sw $zero, 76($t3)
 	
 	jr $ra
 
@@ -968,7 +1022,7 @@ redraw_player_board:
 	rpb_loop_inc_y:
 		li $a0, 0
 		add $a1, $a1, 1
-		bgt $a1, 7, rpb_loop_done
+		bgt $a1, 31, rpb_loop_done
 		j redraw_player_board_loop
 	
 rpb_loop_done:
@@ -984,6 +1038,7 @@ rpb_loop_done:
 	add $sp, $sp, 24
 	
 	jr $ra
+
 exit:
 	li $v0, 10
 	syscall
