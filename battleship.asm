@@ -54,6 +54,8 @@
 	debug_x: .asciiz "x: "
 	debug_y: .asciiz "y: "
 	debug_found: .asciiz "found: "
+	debug_boat_right: .asciiz "bote horizontal"
+	debug_boat_up: .asciiz "bote vertical"
 	
 .text
 	.globl main
@@ -644,18 +646,20 @@ cpu_place_boats:
 	sw $s0, 4($sp)
 	sw $ra, 0($sp)
 	
-	li $a0, PRNG_ID
-	li $a1, PRNG_SEED
-	li $v0, 40 # set seed
+	#li $a0, PRNG_ID
+	#li $a1, PRNG_SEED
+	#li $v0, 40 # set seed
 	syscall
 	
 	li $t0, BOAT_TYPE_CARRIER
+	
 	cpu_place_boats_loop:
 		# Orientación del barco (max 1)
 		li $a0, PRNG_ID
 		li $a1, 2
 		li $v0, 42
 		syscall
+		
 		move $t1, $a0
 		
 		# Calcular cuantos espacios toma el barco
@@ -665,8 +669,10 @@ cpu_place_boats:
 		beq $t1, BOAT_FACING_RIGHT, cpu_place_boats_loop_right
 		
 		cpu_place_boats_loop_up:
+			#print_message(debug_boat_up)
+			
 			li $t3, 16
-			sub $t3, $t3, $t5
+			sub $t3, $t3, $t2
 			add $t3, $t3, 1
 			
 			cpu_place_boats_loop_up_find:
@@ -718,6 +724,7 @@ cpu_place_boats:
 					
 					cpu_place_boats_loop_up_place_data:
 						jal set_element_in_board_matrix
+						
 						add $t4, $t4, 1
 						beq $t4, $t2, cpu_place_boats_loop_continue
 						add $a1, $a1, 1
@@ -726,8 +733,10 @@ cpu_place_boats:
 			j cpu_place_boats_loop_continue
 			
 		cpu_place_boats_loop_right:
+			#print_message(debug_boat_right)
+			
 			li $t3, 16
-			sub $t3, $t3, $t5
+			sub $t3, $t3, $t2
 			add $t3, $t3, 1
 			
 			cpu_place_boats_loop_right_find:
@@ -736,13 +745,13 @@ cpu_place_boats:
 				li $v0, 42
 				syscall
 				
-				add $a0, $a0, 16 # 16 + rand_x [0, 16)
 				move $s0, $a0
 			
 				li $a0, PRNG_ID
 				li $a1, 16
 				syscall
 				
+				add $a0, $a0, 16 # 16 + rand_y [0, 16)
 				move $s1, $a0
 				
 				li $t4, 0
@@ -754,7 +763,7 @@ cpu_place_boats:
 					
 					add $t4, $t4, 1
 					beq $t4, $t2, cpu_place_boats_loop_right_check_done
-					add $s0, $s0, 1
+					add $a0, $a0, 1
 					j cpu_place_boats_loop_right_check
 					
 				cpu_place_boats_loop_right_check_done:
@@ -771,18 +780,20 @@ cpu_place_boats:
 					
 					la $a3, player_board_matrix
 					
-					li $t4, 0
+					li $t4, 0S
 					
 					cpu_place_boats_loop_right_place_data:
 						jal set_element_in_board_matrix
+						
 						add $t4, $t4, 1
 						beq $t4, $t2, cpu_place_boats_loop_continue
 						add $a0, $a0, 1
-						j cpu_place_boats_loop_up_place_data
+						j cpu_place_boats_loop_right_place_data
 						
 	cpu_place_boats_loop_continue:
 		add $t0, $t0, 1
 		bgt $t0, BOAT_TYPE_PATROL_BOAT, cpu_place_boats_done
+		j cpu_place_boats_loop
 	
 cpu_place_boats_done:
 	lw $s1, 8($sp)
